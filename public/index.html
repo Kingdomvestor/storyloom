@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en" data-view="compose">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Storyloom — text in, carousel out</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+<link href="/app.css" rel="stylesheet" />
+</head>
+<body>
+
+<!-- ============================================================ app header -->
+<header class="topbar">
+  <a class="brand" href="/" aria-label="Storyloom home">
+    <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".35"/>
+      <path d="M7 3v18M12 3v18M17 3v18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      <circle cx="12" cy="12" r="2.4" fill="currentColor"/>
+    </svg>
+    <span>Storyloom</span>
+  </a>
+
+  <div class="topbar-right">
+    <span class="pill" id="modelPill" title="Model used for Path A">
+      <i class="dot"></i><span id="modelName">…</span>
+    </span>
+    <span class="pill pill-quiet" title="Template-first carousels never call the model">templates · free</span>
+  </div>
+</header>
+
+<!-- ============================================================== COMPOSE -->
+<main class="view view-compose" id="viewCompose">
+  <div class="hero">
+    <h1>Turn a thought into a <b>carousel</b>.</h1>
+    <p>Paste text or a link. You get 5–10 editable slides at 1080&times;1350 — the preview <em>is</em> the export.</p>
+  </div>
+
+  <section class="composer" id="composer">
+    <div class="seg seg-source" role="tablist" aria-label="Source type">
+      <button class="on" data-src="text" role="tab" aria-selected="true" aria-controls="paneText">Paste text</button>
+      <button data-src="url" role="tab" aria-selected="false" aria-controls="paneUrl">From a link</button>
+    </div>
+
+    <div class="src-pane" data-pane="text" id="paneText" role="tabpanel">
+      <textarea id="sourceText" rows="7" spellcheck="false"
+        placeholder="Paste an article, a rough outline, or three messy sentences you want turned into something postable…"></textarea>
+      <div class="microrow">
+        <span id="textCount">0 characters</span>
+        <button class="linkbtn" id="fillSample">use a sample</button>
+      </div>
+    </div>
+
+    <div class="src-pane" data-pane="url" id="paneUrl" role="tabpanel" hidden>
+      <div class="urlrow">
+        <input id="sourceUrl" type="url" spellcheck="false" placeholder="https://example.com/the-article-you-want-condensed" />
+        <button class="btn-ghost" id="peekBtn">Preview text</button>
+      </div>
+      <div class="microrow"><span>Readability strips nav, ads and footers. Private addresses are refused.</span></div>
+      <div class="peek" id="peek" hidden></div>
+    </div>
+
+    <div class="knobs">
+      <div class="knob">
+        <label>Slides</label>
+        <div class="seg" id="segSlides"></div>
+      </div>
+      <div class="knob">
+        <label>Shape</label>
+        <div class="seg wrap" id="segNarrative"></div>
+      </div>
+      <div class="knob">
+        <label>For</label>
+        <div class="seg" id="segPlatform"></div>
+      </div>
+    </div>
+
+    <div class="knob knob-style">
+      <label>Style <span class="hint">— swappable any time, it's only CSS</span></label>
+      <div class="styles" id="stylePicker"></div>
+    </div>
+
+    <details class="extra">
+      <summary>Add a steer <span class="hint">optional</span></summary>
+      <input id="instructions" placeholder="e.g. keep it blunt, no emoji, speak to junior devs" />
+    </details>
+
+    <button class="btn-go" id="generateBtn">
+      <span class="label">Generate carousel</span>
+      <span class="cost">1 credit</span>
+    </button>
+    <p class="nokey" id="noKeyWarn" hidden>No <code>GEMINI_API_KEY</code> on the server — AI generation is off, templates below still work.</p>
+    <p class="err" id="composeErr" hidden></p>
+
+    <div class="working" id="working" hidden>
+      <div class="bar"><i></i></div>
+      <p><span id="workingMsg">Reading your text…</span><span class="clock" id="workingClock"></span></p>
+    </div>
+  </section>
+
+  <div class="orline"><span>or start from a template — free, unlimited, no model call</span></div>
+
+  <section class="gallery" id="gallery"></section>
+</main>
+
+<!-- =============================================================== EDITOR -->
+<main class="view view-editor" id="viewEditor">
+  <div class="editbar">
+    <button class="btn-ghost sm" id="backBtn">&larr; New</button>
+    <input class="titlebox" id="deckTitle" maxlength="60" aria-label="Deck title" />
+    <div class="editbar-right">
+      <span class="badge-source" id="deckSource"></span>
+      <span class="vstate" id="vstate" title="Live schema + lint check"></span>
+      <button class="btn-go sm" id="renderBtn"><span class="label">Render PNGs</span></button>
+    </div>
+  </div>
+
+  <div class="workspace">
+    <aside class="rail" id="rail"></aside>
+
+    <section class="stage" id="stage">
+      <div class="stage-frame" id="stageFrame">
+        <iframe id="preview" src="/templates/carousel.html" title="Slide preview" scrolling="no"></iframe>
+      </div>
+      <div class="stage-nav">
+        <button id="prevSlide" aria-label="Previous slide">&lsaquo;</button>
+        <span id="slidePos">1 / 5</span>
+        <button id="nextSlide" aria-label="Next slide">&rsaquo;</button>
+        <span class="typepill" id="typePill">hook</span>
+      </div>
+      <div class="stage-note" id="stageNote"></div>
+    </section>
+
+    <aside class="panel">
+      <div class="seg seg-tabs" id="panelTabs" role="tablist" aria-label="Slide settings">
+        <button class="on" data-tab="content" role="tab" aria-selected="true" aria-controls="tabContent">Content</button>
+        <button data-tab="style" role="tab" aria-selected="false" aria-controls="tabStyle">Style</button>
+        <button data-tab="brand" role="tab" aria-selected="false" aria-controls="tabBrand">Brand</button>
+      </div>
+
+      <div class="panel-body" data-tab="content" id="tabContent" role="tabpanel"></div>
+      <div class="panel-body" data-tab="style" id="tabStyle" role="tabpanel" hidden></div>
+      <div class="panel-body" data-tab="brand" id="tabBrand" role="tabpanel" hidden></div>
+    </aside>
+  </div>
+</main>
+
+<!-- render result -->
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-card">
+    <button class="sheet-x" id="sheetX" aria-label="Close">&times;</button>
+    <h3 id="sheetTitle">Rendered</h3>
+    <p class="sheet-sub" id="sheetSub"></p>
+    <div class="shots" id="shots"></div>
+    <p class="sheet-foot">Written to disk. Download, PDF and watermark enforcement are Week B — this is the Week&nbsp;A proof that the browser and Puppeteer render the same file.</p>
+  </div>
+</div>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

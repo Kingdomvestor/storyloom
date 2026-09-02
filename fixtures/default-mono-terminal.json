@@ -1,0 +1,74 @@
+{
+  "format": "carousel",
+  "platform": "linkedin",
+  "aspect_ratio": "4:5",
+  "style_id": "mono-terminal",
+  "narrative_type": "how-to",
+  "source": "template",
+  "title": "Ship a side project in one weekend",
+  "watermark": true,
+  "brand": {
+    "name": "Your name",
+    "handle": "@yourhandle"
+  },
+  "slides": [
+    {
+      "tagline": "FRIDAY → SUNDAY",
+      "heading": "Ship a side project in one weekend",
+      "subtitle": "Four steps. No new frameworks.",
+      "highlight_words": [
+        "one weekend"
+      ],
+      "type": "hook",
+      "page_label": "1/5"
+    },
+    {
+      "tagline": "STEP 1",
+      "heading": "Cut the idea until it fits",
+      "body": "Write the one sentence a user would say to a friend. Everything not in that sentence is version two.",
+      "highlight_words": [
+        "one sentence"
+      ],
+      "type": "body",
+      "page_label": "2/5"
+    },
+    {
+      "tagline": "STEP 2",
+      "heading": "Build the boring middle first",
+      "bullets": [
+        "The part that must work, before the part that must look good",
+        "Hard-code anything you can replace later",
+        "No accounts, no settings, no dashboard",
+        "One happy path, end to end"
+      ],
+      "highlight_words": [
+        "boring middle"
+      ],
+      "type": "body",
+      "page_label": "3/5"
+    },
+    {
+      "tagline": "STEP 3",
+      "heading": "Use it yourself before you show it",
+      "body": "Ten minutes as your own first user finds more than an hour of reading the code will.",
+      "highlight_words": [
+        "yourself"
+      ],
+      "type": "body",
+      "page_label": "4/5"
+    },
+    {
+      "tagline": "STEP 4",
+      "heading": "Ship it unfinished",
+      "body": "A weekend project that exists beats a month-long one that does not. Replace this text and go.",
+      "cta": {
+        "label": "Start editing"
+      },
+      "highlight_words": [
+        "unfinished"
+      ],
+      "type": "cta",
+      "page_label": "5/5"
+    }
+  ]
+}

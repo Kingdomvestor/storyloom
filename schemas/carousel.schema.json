@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://storyloom.app/schemas/carousel.schema.json",
+  "title": "Storyloom carousel deck",
+  "description": "The deck document. What Gemini must return, what Ajv validates, what is stored in carousels.slides. `brand` is resolved from brand_id at render time and is optional here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "platform", "aspect_ratio", "style_id", "narrative_type", "source", "title", "slides"],
+  "properties": {
+    "format": { "const": "carousel" },
+    "platform": { "enum": ["linkedin", "instagram"] },
+    "aspect_ratio": { "enum": ["4:5"] },
+    "style_id": { "enum": ["signature-african", "editorial-clean", "mono-terminal"] },
+    "narrative_type": {
+      "enum": ["listicle", "how-to", "story", "myth-bust", "case-study", "manual"]
+    },
+    "source": { "enum": ["ai", "template"] },
+    "title": { "type": "string", "minLength": 1, "maxLength": 60 },
+    "watermark": { "type": "boolean", "default": true },
+    "theme": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "palette": { "type": "string", "maxLength": 40 },
+        "accent_hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "font_pair": { "type": "string", "maxLength": 40 }
+      }
+    },
+    "brand": {
+      "type": "object",
+      "description": "Injected at render time from the brands table. Never authored by the LLM.",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "maxLength": 40 },
+        "handle": { "type": "string", "maxLength": 30 },
+        "logo_url": { "type": "string", "maxLength": 500 }
+      }
+    },
+    "slides": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 10,
+      "items": { "$ref": "#/$defs/slide" }
+    }
+  },
+  "$defs": {
+    "slide": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "heading"],
+      "properties": {
+        "type": { "enum": ["hook", "body", "cta"] },
+        "tagline": { "type": "string", "maxLength": 40 },
+        "heading": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "subtitle": { "type": "string", "maxLength": 60 },
+        "body": { "type": "string", "maxLength": 180 },
+        "bullets": {
+          "type": "array",
+          "maxItems": 4,
+          "items": { "type": "string", "minLength": 1, "maxLength": 90 }
+        },
+        "highlight_words": {
+          "type": "array",
+          "description": "Substrings of heading/subtitle/body/bullets to render in the accent style. Avoids needing a rich-text editor.",
+          "maxItems": 6,
+          "items": { "type": "string", "minLength": 2, "maxLength": 40 }
+        },
+        "cta": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["label"],
+          "properties": { "label": { "type": "string", "minLength": 1, "maxLength": 30 } }
+        },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source"],
+          "properties": {
+            "source": { "enum": ["none", "upload"] },
+            "ref": { "type": "string", "maxLength": 300 }
+          }
+        },
+        "page_label": { "type": "string", "maxLength": 10 }
+      }
+    }
+  }
+}
