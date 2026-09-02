@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en" data-ready="false">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1080, initial-scale=1" />
+<title>Storyloom · carousel template</title>
+
+<!-- Fonts. Google Fonts when online; explicit document.fonts.load() below forces the
+     wait before we signal ready, and CSS fallbacks keep it rendering if offline. -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,600;0,700;0,800;1,600&family=Lato:ital,wght@0,400;0,700;1,400&family=Playfair+Display:ital,wght@0,600;0,800;1,600&family=JetBrains+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+
+<style>
+  /* ---------- frame ---------- */
+  :root {
+    --W: 1080px;   /* 4:5 · 1080×1350 — the export size, exact */
+    --H: 1350px;
+    --pad: 92px;   /* safe padding from every edge */
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: var(--W); height: var(--H); overflow: hidden; }
+  body { background: #2b2b2b; }            /* only ever seen if a screenshot misfires */
+
+  #slide {
+    position: relative;
+    width: var(--W);
+    height: var(--H);
+    padding: var(--pad);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  /* text blocks: never let a long unbroken token spill past the card edge */
+  .tagline, .heading, .subtitle, .body, .bullets li, .cta, .foot, .page { overflow-wrap: anywhere; }
+
+  /* ---------- shared layout roles ---------- */
+  /* Auto margins on the outer children absorb slack, so a sparse slide sits
+     optically centred instead of leaving a void at the bottom. When the slide
+     is full they resolve to 0 and content stays top-aligned — unlike
+     justify-content:center, which would clip the top on overflow. */
+  .stack { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+  .stack > :first-child { margin-top: auto; }
+  .stack > :last-child { margin-bottom: auto; }
+
+  .tagline {
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    font-size: 26px;
+    margin-bottom: 26px;
+  }
+  .heading { font-weight: 800; line-height: 1.04; }        /* size set by autofit */
+  .subtitle { font-weight: 600; line-height: 1.15; margin-top: 18px; font-size: 40px; }
+  .body { line-height: 1.42; margin-top: 30px; font-size: 34px; max-width: 24ch; }
+  .bullets { list-style: none; margin-top: 34px; display: flex; flex-direction: column; gap: 20px; }
+  .bullets li { position: relative; padding-left: 46px; line-height: 1.3; font-size: 30px; }
+  .bullets li::before {
+    content: ""; position: absolute; left: 0; top: .55em;
+    width: 20px; height: 3px; background: var(--accent);
+  }
+
+  .hl { color: var(--accent); font-style: italic; }
+
+  /* footer row: brand + page label, pinned to the bottom */
+  .footrow {
+    flex: 0 0 auto; margin-top: 34px;
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+  }
+  .foot { display: flex; align-items: center; gap: 16px; font-size: 24px; }
+  .foot .avatar {
+    width: 46px; height: 46px; border-radius: 50%;
+    display: grid; place-items: center; font-weight: 800; font-size: 22px;
+    background: var(--accent); color: var(--bg);
+  }
+  .foot .who b { font-weight: 700; }
+  .foot .who span { display: block; opacity: .7; font-size: 20px; }
+  .page { font-size: 22px; opacity: .6; font-variant-numeric: tabular-nums; }
+
+  /* CTA slide */
+  .cta {
+    align-self: flex-start; margin-top: 40px;
+    font-weight: 700; font-size: 32px;
+    padding: 22px 40px; border-radius: 999px;
+    background: var(--accent); color: var(--cta-fg);
+  }
+
+  /* watermark (free tier) — enforced server-side at export, shown here for parity */
+  .watermark {
+    position: absolute; top: var(--pad); right: var(--pad);
+    font-size: 18px; letter-spacing: .04em; opacity: .5;
+  }
+
+  /* =====================================================================
+     SKINS — same layout, three token sets + light per-skin flourishes.
+     Selected by <html data-style="…">.
+     ===================================================================== */
+
+  /* signature-african — adire indigo ground, bone text, brass accent, kente strip */
+  [data-style="signature-african"] #slide {
+    --bg:#101A33; --fg:#F0E7D4; --accent:#D9A23B; --cta-fg:#101A33;
+    background:
+      radial-gradient(120% 90% at 85% -10%, rgba(15,107,97,.22), transparent 60%),
+      radial-gradient(90% 70% at -10% 110%, rgba(189,74,46,.20), transparent 55%),
+      var(--bg);
+    color: var(--fg);
+    font-family: Lato, system-ui, sans-serif;
+  }
+  [data-style="signature-african"] .tagline,
+  [data-style="signature-african"] .heading,
+  [data-style="signature-african"] .subtitle { font-family: Poppins, system-ui, sans-serif; }
+  [data-style="signature-african"] .tagline { color: var(--accent); }
+  /* kente strip down the safe-margin gutter */
+  [data-style="signature-african"] #slide::before {
+    content:""; position:absolute; left:0; top:0; bottom:0; width:16px;
+    background: repeating-linear-gradient(180deg,
+      #D9A23B 0 42px, #0F6B61 42px 84px, #BD4A2E 84px 126px, #F0E7D4 126px 168px);
+    opacity:.9;
+  }
+
+  /* editorial-clean — bone paper, ink serif headings, clay accent, quiet luxury */
+  [data-style="editorial-clean"] #slide {
+    --bg:#F7F4EC; --fg:#1B1A17; --accent:#BD4A2E; --cta-fg:#F7F4EC;
+    background: var(--bg); color: var(--fg);
+    font-family: Lato, system-ui, sans-serif;
+  }
+  [data-style="editorial-clean"] .heading,
+  [data-style="editorial-clean"] .subtitle { font-family: "Playfair Display", Georgia, serif; }
+  [data-style="editorial-clean"] .tagline { color: var(--accent); }
+  [data-style="editorial-clean"] .heading { font-weight: 800; line-height: 1.02; }
+  [data-style="editorial-clean"] .hl { font-style: italic; color: var(--accent); }
+  /* thin rule under the eyebrow */
+  [data-style="editorial-clean"] .tagline { border-bottom: 2px solid rgba(27,26,23,.15); padding-bottom: 20px; }
+  [data-style="editorial-clean"] .foot .avatar { color: #F7F4EC; }
+
+  /* mono-terminal — near-black, JetBrains Mono, terminal-green, > prompt motif */
+  [data-style="mono-terminal"] #slide {
+    --bg:#0A0C0B; --fg:#E6EDE9; --accent:#3DDC84; --cta-fg:#0A0C0B;
+    background:
+      linear-gradient(180deg, rgba(61,220,132,.06), transparent 30%),
+      var(--bg);
+    color: var(--fg);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+  }
+  [data-style="mono-terminal"] * { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  [data-style="mono-terminal"] .tagline { color: var(--accent); letter-spacing:.1em; }
+  [data-style="mono-terminal"] .heading { font-weight: 700; line-height: 1.1; }
+  [data-style="mono-terminal"] .heading::before { content: "> "; color: var(--accent); }
+  [data-style="mono-terminal"] .body { max-width: 40ch; }
+  [data-style="mono-terminal"] .body::before { content: "// "; opacity:.5; }
+  [data-style="mono-terminal"] .bullets li::before {
+    content: "▸"; background: none; color: var(--accent);
+    width: auto; height: auto; top: 0; font-size: 30px;
+  }
+  [data-style="mono-terminal"] .bullets li { padding-left: 40px; }
+  [data-style="mono-terminal"] .cta { border-radius: 6px; }
+  [data-style="mono-terminal"] .hl { font-style: normal; color: var(--accent); }
+</style>
+</head>
+<body>
+  <div id="slide"><!-- filled by render() --></div>
+
+<script>
+(() => {
+  "use strict";
+  const $slide = document.getElementById("slide");
+  const root = document.documentElement;
+
+  // ---- deck state ----
+  let deck = null;
+  let index = 0;
+
+  const esc = (s) => String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+  const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  // Wrap each highlight substring (case-insensitive) in <span class="hl">.
+  //
+  // Each match is first extended outward to whole-word boundaries. Without that,
+  // highlighting "explicit" on a slide whose body says "Explicitly" colours eight
+  // of ten letters and the word renders as a typo. Extending also makes a stem
+  // do the useful thing — "commit" lights up "commits" — and guarantees no word
+  // is ever left half-accented, whether the entry came from the model or from a
+  // user typing it into the editor.
+  //
+  // Operates on already-escaped text; longest phrases first so a short word
+  // inside a longer phrase doesn't wrap first and break the match.
+  const WORD_CHAR = "[\\p{L}\\p{N}'’]*"; // apostrophes included so "don't" stays whole
+
+  function highlight(escaped, words) {
+    if (!Array.isArray(words) || !words.length) return escaped;
+    const uniq = [...new Set(words.filter((w) => typeof w === "string" && w.trim().length >= 2))]
+      .sort((a, b) => b.length - a.length);
+    let out = escaped;
+    for (const w of uniq) {
+      // The lookahead keeps the match out of markup already inserted by a
+      // previous pass — without it, a short entry can match inside class="hl".
+      const re = new RegExp(`(${WORD_CHAR}${escRe(esc(w.trim()))}${WORD_CHAR})(?![^<]*>)`, "giu");
+      out = out.replace(re, '<span class="hl">$1</span>');
+    }
+    return out;
+  }
+
+  const field = (text, words, cls, tag = "div") => {
+    if (text == null || text === "") return "";
+    return `<${tag} class="${cls}">${highlight(esc(text), words)}</${tag}>`;
+  };
+
+  function footerHTML(s) {
+    const b = deck.brand || {};
+    const name = b.name || "";
+    const handle = b.handle || "";
+    // Nothing to show → render nothing. An empty footrow still eats ~80px of
+    // card, which reads as a layout bug on brandless (template-first) decks.
+    if (!name && !handle && !s.page_label) return "";
+    const initial = (name || handle || "V").replace(/^@/, "").charAt(0).toUpperCase();
+    const brand = (name || handle)
+      ? `<div class="foot">
+           <div class="avatar">${esc(initial)}</div>
+           <div class="who"><b>${esc(name || handle)}</b>${name && handle ? `<span>${esc(handle)}</span>` : ""}</div>
+         </div>`
+      : `<div class="foot"></div>`;
+    const page = s.page_label ? `<div class="page">${esc(s.page_label)}</div>` : `<div class="page"></div>`;
+    return `<div class="footrow">${brand}${page}</div>`;
+  }
+
+  function slideHTML(s, words) {
+    const parts = [];
+    if (deck.watermark) parts.push(`<div class="watermark">Made with Storyloom</div>`);
+    parts.push(field(s.tagline, words, "tagline"));
+    parts.push(`<div class="stack">`);
+    parts.push(field(s.heading, words, "heading", "h1"));
+    parts.push(field(s.subtitle, words, "subtitle", "h2"));
+    parts.push(field(s.body, words, "body", "p"));
+    if (Array.isArray(s.bullets) && s.bullets.length) {
+      parts.push(`<ul class="bullets">${s.bullets.map((b) => `<li>${highlight(esc(b), words)}</li>`).join("")}</ul>`);
+    }
+    if (s.cta && s.cta.label) parts.push(`<div class="cta">${esc(s.cta.label)}</div>`);
+    parts.push(`</div>`); // .stack
+    parts.push(footerHTML(s));
+    return parts.join("");
+  }
+
+  // Fit the heading to whatever space the rest of the slide leaves it.
+  // Starts from a display-size ceiling so a 5-word hook fills the card, and
+  // respects three independent constraints: an unbreakable word wider than the
+  // column, the vertical budget, and a hard line ceiling.
+  function autofitHeading() {
+    const h = $slide.querySelector(".heading");
+    const stack = $slide.querySelector(".stack");
+    if (!h || !stack) return;
+    const CAP = 132, FLOOR = 34, MAX_LINES = 4;
+
+    // Vertical budget = the stack minus what the other blocks actually use, so
+    // a heading-only slide gets nearly the whole card and a crammed one gets
+    // what's left. No fixed percentage to tune per deck. Sibling heights don't
+    // depend on the heading's size, so this is measured once.
+    const used = [...stack.children].reduce((sum, el) => {
+      if (el === h) return sum;
+      const mt = parseFloat(getComputedStyle(el).marginTop) || 0;
+      return sum + el.getBoundingClientRect().height + mt;
+    }, 0);
+    const budget = Math.max(140, stack.clientHeight - used);
+
+    // Both constraints are monotonic in font size, so binary search rather than
+    // stepping down 2px at a time: ~7 reflows per constraint instead of ~50.
+    // The editor re-runs this on every keystroke, so the difference is felt.
+    const largestThatFits = (fits) => {
+      let lo = FLOOR, hi = CAP, best = FLOOR;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        h.style.fontSize = mid + "px";
+        if (fits()) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
+      }
+      return best;
+    };
+
+    // 1. Horizontal. Under normal wrapping an over-long word overflows its box,
+    //    so scrollWidth reveals it. Shrink rather than break it mid-word —
+    //    "Antidisestablishmentarianism" split across a line is worse than the
+    //    same word set smaller.
+    h.style.overflowWrap = "normal";
+    const byWidth = largestThatFits(() => h.scrollWidth <= h.clientWidth);
+    h.style.overflowWrap = "anywhere"; // last-resort net once we reach FLOOR
+
+    // 2. Vertical: height budget plus a hard line ceiling.
+    const byHeight = largestThatFits(() => {
+      if (h.scrollHeight > budget) return false;
+      const lh = parseFloat(getComputedStyle(h).lineHeight) || 0;
+      return lh ? Math.round(h.scrollHeight / lh) <= MAX_LINES : true;
+    });
+
+    h.style.fontSize = Math.min(byWidth, byHeight) + "px";
+  }
+
+  // If the whole stack still overflows (crammed slide), scale body text down a notch.
+  function autofitBody() {
+    const stack = $slide.querySelector(".stack");
+    if (!stack) return;
+    let guard = 0;
+    while ($slide.scrollHeight > $slide.clientHeight && guard++ < 24) {
+      const shrinkables = $slide.querySelectorAll(".body, .bullets li, .subtitle");
+      let changed = false;
+      shrinkables.forEach((el) => {
+        const cur = parseFloat(getComputedStyle(el).fontSize);
+        if (cur > 22) { el.style.fontSize = (cur - 1) + "px"; changed = true; }
+      });
+      if (!changed) break;
+    }
+  }
+
+  const FONT_PROBES = [
+    "700 48px Poppins", "800 48px Poppins", "400 32px Lato",
+    "800 48px 'Playfair Display'", "700 40px 'JetBrains Mono'", "400 32px 'JetBrains Mono'",
+  ];
+
+  async function signalReady() {
+    try {
+      await (document.fonts?.ready ?? Promise.resolve());
+      await Promise.all(FONT_PROBES.map((f) => document.fonts?.load(f).catch(() => {})));
+    } catch { /* offline → fallback fonts, still render */ }
+    // two frames so layout + autofit have painted
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    root.dataset.ready = "true";
+  }
+
+  function render(i = index) {
+    if (!deck || !Array.isArray(deck.slides) || !deck.slides.length) return;
+    root.dataset.ready = "false";
+    index = Math.max(0, Math.min(i, deck.slides.length - 1));
+    const s = deck.slides[index];
+    root.setAttribute("data-style", deck.style_id || "signature-african");
+    $slide.innerHTML = slideHTML(s, s.highlight_words);
+    autofitHeading();
+    autofitBody();
+    signalReady();
+  }
+
+  // ---- public API (used by the browser editor AND by Puppeteer) ----
+  window.STORYLOOM = {
+    setDeck(d) { deck = d; index = 0; render(0); return deck.slides.length; },
+    renderSlide(i) { render(i); },
+    slideCount() { return deck?.slides?.length ?? 0; },
+    get index() { return index; },
+  };
+
+  // If a deck was injected before this script ran (Puppeteer sets it pre-load), pick it up.
+  if (window.CAROUSEL_DATA) window.STORYLOOM.setDeck(window.CAROUSEL_DATA);
+})();
+</script>
+</body>
+</html>

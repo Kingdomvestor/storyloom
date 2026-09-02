@@ -1,0 +1,64 @@
+{
+  "format": "carousel",
+  "platform": "linkedin",
+  "aspect_ratio": "4:5",
+  "style_id": "editorial-clean",
+  "narrative_type": "story",
+  "source": "template",
+  "title": "The draft nobody wanted to write",
+  "watermark": true,
+  "brand": {
+    "name": "Your name",
+    "handle": "@yourhandle"
+  },
+  "slides": [
+    {
+      "tagline": "A SHORT STORY",
+      "heading": "The draft nobody wanted to write",
+      "subtitle": "It was the one that worked.",
+      "highlight_words": [
+        "nobody wanted"
+      ],
+      "type": "hook",
+      "page_label": "1/5"
+    },
+    {
+      "heading": "The version that felt safe",
+      "body": "It said the agreeable thing in the agreeable way. It could have been written by anyone, about anything, which is exactly why it reached no one.",
+      "highlight_words": [
+        "safe"
+      ],
+      "type": "body",
+      "page_label": "2/5"
+    },
+    {
+      "heading": "The sentence that felt risky",
+      "body": "One line named the thing everyone had been avoiding. Cutting it would have been the comfortable choice, and it stayed in.",
+      "highlight_words": [
+        "risky"
+      ],
+      "type": "body",
+      "page_label": "3/5"
+    },
+    {
+      "heading": "What changed",
+      "body": "Fewer people agreed. Far more people replied. Agreement is quiet and disagreement is loud, and only one of them is a conversation.",
+      "highlight_words": [
+        "replied"
+      ],
+      "type": "body",
+      "page_label": "4/5"
+    },
+    {
+      "tagline": "YOUR TURN",
+      "heading": "Tell yours here",
+      "subtitle": "Same layout, your words.",
+      "body": "Swap this text for the story you have been putting off.",
+      "cta": {
+        "label": "Start editing"
+      },
+      "type": "cta",
+      "page_label": "5/5"
+    }
+  ]
+}

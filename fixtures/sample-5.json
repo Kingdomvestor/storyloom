@@ -1,0 +1,78 @@
+{
+  "format": "carousel",
+  "platform": "linkedin",
+  "aspect_ratio": "4:5",
+  "style_id": "signature-african",
+  "narrative_type": "listicle",
+  "source": "ai",
+  "title": "Why every developer needs a portfolio site",
+  "watermark": true,
+  "theme": {
+    "palette": "indigo-brass",
+    "accent_hex": "#D9A23B",
+    "font_pair": "poppins-lato"
+  },
+  "brand": {
+    "name": "Storyloom",
+    "handle": "@kingdomvestor"
+  },
+  "slides": [
+    {
+      "type": "hook",
+      "tagline": "FOR DEVELOPERS",
+      "heading": "Your GitHub is not a portfolio",
+      "body": "Recruiters spend seconds on a profile. Raw repos don't tell them what you can actually build.",
+      "highlight_words": ["not a portfolio"],
+      "page_label": "1/5"
+    },
+    {
+      "type": "body",
+      "tagline": "REASON 01",
+      "heading": "It controls the first impression",
+      "body": "A profile shows your code. A portfolio shows your judgement — what you chose to build, and why.",
+      "bullets": [
+        "You pick the framing, not the algorithm",
+        "You decide what gets seen first",
+        "You explain the why behind the what"
+      ],
+      "highlight_words": ["judgement"],
+      "page_label": "2/5"
+    },
+    {
+      "type": "body",
+      "tagline": "REASON 02",
+      "heading": "It is proof you ship",
+      "subtitle": "Deployed beats described",
+      "body": "A live URL settles the question a CV only raises. Anyone can claim React. A working app proves it.",
+      "bullets": [
+        "One deployed project outweighs five tutorials",
+        "Uptime is a skill nobody lists but everyone notices",
+        "Bugs you fixed in public read as experience"
+      ],
+      "highlight_words": ["A live URL", "proves it"],
+      "page_label": "3/5"
+    },
+    {
+      "type": "body",
+      "tagline": "REASON 03",
+      "heading": "It compounds while you sleep",
+      "body": "Applications end when you stop sending them. A site keeps working — search, referrals, old links.",
+      "bullets": [
+        "Found through search months later",
+        "Easy for someone to forward on your behalf",
+        "One link answers every version of \"what do you do?\""
+      ],
+      "highlight_words": ["compounds"],
+      "page_label": "4/5"
+    },
+    {
+      "type": "cta",
+      "tagline": "START HERE",
+      "heading": "Ship one page this week",
+      "body": "Not a redesign. One page: who you are, three things you built, how to reach you. Improve it later.",
+      "cta": { "label": "Follow for more →" },
+      "highlight_words": ["One page"],
+      "page_label": "5/5"
+    }
+  ]
+}

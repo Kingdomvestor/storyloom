@@ -1,0 +1,25 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+
+# dependencies
+node_modules/
+
+# machine-local Claude Code permissions — not shared
+.claude/settings.local.json
+
+# generated output (regenerate with: npm run render:all)
+out/
+
+# OS / editor noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# logs
+npm-debug.log*
+*.log

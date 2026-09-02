@@ -1,0 +1,100 @@
+{
+  "format": "carousel",
+  "platform": "instagram",
+  "aspect_ratio": "4:5",
+  "style_id": "mono-terminal",
+  "narrative_type": "how-to",
+  "source": "ai",
+  "title": "Ship a side project in one weekend",
+  "watermark": false,
+  "theme": { "palette": "terminal-green", "accent_hex": "#0F6B61", "font_pair": "mono-mono" },
+  "brand": { "name": "Storyloom", "handle": "@kingdomvestor" },
+  "slides": [
+    {
+      "type": "hook",
+      "tagline": "48 HOURS",
+      "heading": "Ship a side project this weekend",
+      "body": "Most side projects die in week three. Here is the scope that survives to Sunday night.",
+      "highlight_words": ["die in week three"],
+      "page_label": "01/10"
+    },
+    {
+      "type": "body",
+      "tagline": "STEP 01",
+      "heading": "Pick something you can describe in one line",
+      "body": "If the pitch needs a paragraph, the build needs a month. Cut until one sentence covers it.",
+      "highlight_words": ["one line"],
+      "page_label": "02/10"
+    },
+    {
+      "type": "body",
+      "tagline": "STEP 02",
+      "heading": "Write the ending first",
+      "body": "Decide exactly what \"done\" looks like on Sunday at 6pm. Everything outside that is version two.",
+      "bullets": ["One screen", "One happy path", "One deploy target"],
+      "page_label": "03/10"
+    },
+    {
+      "type": "body",
+      "tagline": "STEP 03",
+      "heading": "Use the boring stack you know",
+      "body": "A weekend is not the time to learn a framework. Reach for the tools your hands already know.",
+      "highlight_words": ["boring stack"],
+      "page_label": "04/10"
+    },
+    {
+      "type": "body",
+      "tagline": "STEP 04",
+      "heading": "Deploy before you build",
+      "subtitle": "Hello world, in production",
+      "body": "Get an empty page live in the first hour. Deployment surprises are cheap on Friday, fatal on Sunday.",
+      "highlight_words": ["first hour"],
+      "page_label": "05/10"
+    },
+    {
+      "type": "body",
+      "tagline": "STEP 05",
+      "heading": "Fake the hard part",
+      "body": "Hardcode it. Stub it. Fill it by hand. Prove people want the thing before you automate the thing.",
+      "bullets": [
+        "Static JSON instead of a database",
+        "A form that emails you instead of a dashboard",
+        "You, manually, instead of a cron job"
+      ],
+      "highlight_words": ["Fake"],
+      "page_label": "06/10"
+    },
+    {
+      "type": "body",
+      "tagline": "STEP 06",
+      "heading": "No accounts until someone asks",
+      "body": "Auth is a weekend on its own. Ship without login and watch whether anyone misses it.",
+      "highlight_words": ["a weekend on its own"],
+      "page_label": "07/10"
+    },
+    {
+      "type": "body",
+      "tagline": "STEP 07",
+      "heading": "Timebox the design to one hour",
+      "body": "Pick two fonts and three colours, then stop. Consistency reads as design. Fiddling reads as delay.",
+      "highlight_words": ["two fonts and three colours"],
+      "page_label": "08/10"
+    },
+    {
+      "type": "body",
+      "tagline": "STEP 08",
+      "heading": "Post it before it is ready",
+      "body": "Sunday night, unfinished, with a caveat. Feedback on a live thing beats a polished thing nobody saw.",
+      "highlight_words": ["before it is ready"],
+      "page_label": "09/10"
+    },
+    {
+      "type": "cta",
+      "tagline": "YOUR TURN",
+      "heading": "What are you shipping this weekend?",
+      "body": "Reply with the one-line pitch. I will tell you what to cut.",
+      "cta": { "label": "Drop it below ↓" },
+      "page_label": "10/10"
+    }
+  ]
+}

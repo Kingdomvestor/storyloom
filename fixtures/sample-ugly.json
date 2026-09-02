@@ -1,0 +1,48 @@
+{
+  "format": "carousel",
+  "platform": "linkedin",
+  "aspect_ratio": "4:5",
+  "style_id": "editorial-clean",
+  "narrative_type": "manual",
+  "source": "template",
+  "title": "Edge cases: long words, empty slots, crammed slides",
+  "watermark": true,
+  "theme": { "palette": "bone-ink", "accent_hex": "#BD4A2E", "font_pair": "poppins-lato" },
+  "slides": [
+    {
+      "type": "hook",
+      "heading": "This heading is exactly sixty characters long to test wrap",
+      "highlight_words": ["nonmatching phrase that appears nowhere"]
+    },
+    {
+      "type": "body",
+      "heading": "Antidisestablishmentarianism pneumonoultramicroscopic",
+      "body": "Onelongunbrokenstringwithnospacesthatmustnotoverflowthecardedgeorbreaklayoutentirelywhenrendered.",
+      "highlight_words": ["Antidisestablishmentarianism"]
+    },
+    {
+      "type": "body",
+      "heading": "Everything at once",
+      "tagline": "MAX SLOTS · A VERY LONG EYEBROW LINE",
+      "subtitle": "A subtitle that also runs to the sixty character maximum ok",
+      "body": "Body copy at the full one hundred and eighty character maximum, crammed together with a tagline, a subtitle, four bullets, and a call to action label — everything competing.",
+      "bullets": [
+        "First bullet also stretched to the ninety character maximum so the line wrapping is tested",
+        "Second bullet, shorter",
+        "Third",
+        "Fourth bullet again pushed out to ninety characters to check vertical fit inside one slide"
+      ],
+      "cta": { "label": "A CTA on a body slide" },
+      "highlight_words": ["Everything", "competing"]
+    },
+    {
+      "type": "body",
+      "heading": "Heading only, nothing else"
+    },
+    {
+      "type": "cta",
+      "heading": "Short",
+      "cta": { "label": "Go →" }
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "_comment": "Deliberately BROKEN — not for rendering. Feed to `node src/validate.js` to prove validateDeck() rejects it and repairDeck() rescues it. Mirrors a plausibly bad Gemini response: wrong slide types, over-length strings, too few slides, junk fields, bad enums.",
+  "format": "carousel",
+  "platform": "twitter",
+  "aspect_ratio": "16:9",
+  "style_id": "neon-cyberpunk",
+  "narrative_type": "explainer",
+  "source": "ai",
+  "title": "This title is far too long to fit inside the sixty character cap that the schema enforces on deck titles",
+  "slides": [
+    {
+      "type": "intro",
+      "heading": "A heading that comfortably blows past the sixty character maximum the schema allows for headings",
+      "body": "A body string that is also way over the one hundred and eighty character limit, padded out with filler so that Ajv has something concrete to reject when the deck is validated against the carousel schema during the retry-then-repair fallback path we built.",
+      "bullets": ["ok", "", "   ", "a fifth bullet beyond the max-four limit", "b", "c"],
+      "highlight_words": ["x"],
+      "junk_field": "should be stripped by additionalProperties:false"
+    },
+    {
+      "type": "outro",
+      "heading": "Only two slides, so below the five-slide minimum"
+    }
+  ]
+}

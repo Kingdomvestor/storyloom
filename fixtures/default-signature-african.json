@@ -1,0 +1,69 @@
+{
+  "format": "carousel",
+  "platform": "linkedin",
+  "aspect_ratio": "4:5",
+  "style_id": "signature-african",
+  "narrative_type": "listicle",
+  "source": "template",
+  "title": "5 rules for posts that travel",
+  "watermark": true,
+  "brand": {
+    "name": "Your name",
+    "handle": "@yourhandle"
+  },
+  "slides": [
+    {
+      "tagline": "THE RULES",
+      "heading": "5 rules for posts that actually travel",
+      "subtitle": "Reach is a craft, not an accident.",
+      "highlight_words": [
+        "travel"
+      ],
+      "type": "hook",
+      "page_label": "1/5"
+    },
+    {
+      "tagline": "Rule 1",
+      "heading": "Earn the first two seconds",
+      "body": "Nobody decides to read your post. They decide to stop scrolling. Those are different decisions, and only the second one is yours to win.",
+      "highlight_words": [
+        "first two seconds"
+      ],
+      "type": "body",
+      "page_label": "2/5"
+    },
+    {
+      "tagline": "Rule 2",
+      "heading": "One idea per slide",
+      "body": "If a slide needs the word \"also\", it is two slides. Splitting costs you nothing and buys the reader a place to breathe.",
+      "highlight_words": [
+        "One idea"
+      ],
+      "type": "body",
+      "page_label": "3/5"
+    },
+    {
+      "tagline": "Rule 3",
+      "heading": "Be specific or be skipped",
+      "body": "A number, a name, or a moment beats an adjective every time. \"Faster\" is a claim. \"Nine seconds to two\" is a reason to believe you.",
+      "highlight_words": [
+        "specific"
+      ],
+      "type": "body",
+      "page_label": "4/5"
+    },
+    {
+      "tagline": "YOUR TURN",
+      "heading": "Replace this with your own",
+      "body": "Every word here is editable. Change the text, switch the style, keep the layout.",
+      "cta": {
+        "label": "Start editing"
+      },
+      "highlight_words": [
+        "your own"
+      ],
+      "type": "cta",
+      "page_label": "5/5"
+    }
+  ]
+}
