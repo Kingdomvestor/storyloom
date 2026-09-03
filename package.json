@@ -11,10 +11,12 @@
     "validate": "node src/validate.js",
     "generate": "node src/generate.js",
     "extract": "node src/extract.js",
+    "test": "node --test",
     "render:all": "node src/render.js fixtures/sample-5.json && node src/render.js fixtures/sample-10.json && node src/render.js fixtures/sample-ugly.json"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
+    "@supabase/supabase-js": "^2.114.0",
     "ajv": "^8.17.1",
     "express": "^5.2.1",
     "jsdom": "^29.1.1",
