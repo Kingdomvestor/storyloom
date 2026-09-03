@@ -41,6 +41,9 @@ A weekend project that exists beats a month-long one that doesn't.`;
 // --------------------------------------------------------------------- state
 const state = {
   meta: null,
+  user: null,
+  credits: null,
+  deckId: null,
   deck: null,
   index: 0,
   warnings: [],
@@ -48,18 +51,161 @@ const state = {
   compose: { src: 'text', slides: 'auto', narrative: 'listicle', style: 'signature-african', platform: 'linkedin' },
 };
 
+let sb = null; // supabase browser client, or null when unconfigured
+
 // ----------------------------------------------------------------- transport
-async function api(path, body) {
-  const res = await fetch(path, body
-    ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
-    : undefined);
+async function api(path, body, opts = {}) {
+  const method = opts.method ?? (body ? 'POST' : 'GET');
+  const headers = {};
+  if (body) headers['content-type'] = 'application/json';
+  if (sb) {
+    const { data } = await sb.auth.getSession();
+    const token = data?.session?.access_token;
+    if (token) headers.authorization = `Bearer ${token}`;
+  }
+  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
   let data;
   try {
     data = await res.json();
   } catch {
     return { ok: false, kind: 'bad_response', message: `${res.status} ${res.statusText}` };
   }
+  // Any expired/invalid session flips the whole app back to the auth view.
+  if (data && data.ok === false && data.kind === 'unauthorized' && sb) applySession(null);
   return data;
+}
+
+// ------------------------------------------------------------------ accounts
+async function initSupabase(cfg) {
+  if (!cfg) return null;                        // unconfigured server → stay null
+  const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2');
+  sb = createClient(cfg.url, cfg.anonKey);
+  return sb;
+}
+
+/** Single source of truth for "who is signed in" → drives the view + header. */
+async function applySession(session) {
+  state.user = session?.user ?? null;
+  document.documentElement.dataset.auth = state.user ? 'in' : 'out';
+  if (!state.user) {
+    state.credits = null;
+    state.deckId = null;
+    document.documentElement.dataset.view = 'auth';
+    return;
+  }
+  $('#userEmail').textContent = state.user.email;
+  await loadDashboard();                        // sets credits + grid
+  document.documentElement.dataset.view = 'dashboard';
+}
+
+function renderCredits() {
+  if (state.credits == null) return;
+  $('#creditsNum').textContent = state.credits;
+  const btn = $('#generateBtn');
+  const out = state.credits <= 0;
+  // don't override the no-API-key disable
+  if (state.meta?.hasApiKey) btn.disabled = out;
+  $('.cost', btn).textContent = out ? 'no credits' : '1 credit';
+}
+
+function wireAuth() {
+  const form = $('#authForm');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (!sb) return;
+    const email = $('#authEmail').value.trim();
+    const password = $('#authPassword').value;
+    const err = $('#authErr');
+    err.hidden = true;
+    $('#authSubmit').disabled = true;
+    const { error } = form.dataset.mode === 'signup'
+      ? await sb.auth.signUp({ email, password })
+      : await sb.auth.signInWithPassword({ email, password });
+    $('#authSubmit').disabled = false;
+    if (error) { err.hidden = false; err.textContent = error.message; }
+    // success → onAuthStateChange fires applySession → dashboard
+  };
+  $('#authToggle').onclick = () => {
+    const to = form.dataset.mode === 'signin' ? 'signup' : 'signin';
+    form.dataset.mode = to;
+    $('#authSubmit').textContent = to === 'signup' ? 'Create account' : 'Sign in';
+    $('#authToggle').textContent = to === 'signup'
+      ? 'Have an account? Sign in' : 'New here? Create an account';
+    $('#authPassword').autocomplete = to === 'signup' ? 'new-password' : 'current-password';
+  };
+  $('#logoutBtn').onclick = () => sb?.auth.signOut();
+  $('#dashLink').onclick = () => applySession({ user: state.user });
+}
+
+async function loadDashboard() {
+  const r = await api('/api/decks');
+  if (!r.ok) return;
+  state.credits = r.credits;
+  renderCredits();
+  const grid = $('#deckGrid');
+  grid.innerHTML = '';
+  $('#dashEmpty').hidden = r.decks.length > 0;
+  for (const d of r.decks) grid.appendChild(deckCard(d));
+}
+
+function deckCard(d) {
+  const card = document.createElement('article');
+  card.className = 'deckcard';
+  card.onclick = () => openSavedDeck(d.id);
+
+  const h = document.createElement('h3');
+  h.textContent = d.title || 'Untitled';
+
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  const badge = document.createElement('span');
+  badge.className = 'badge-source';
+  badge.dataset.src = d.source;
+  badge.textContent = d.source === 'ai' ? 'AI' : 'Template';
+  const when = document.createElement('span');
+  when.textContent = new Date(d.updated_at).toLocaleDateString();
+  meta.append(badge, when);
+
+  const del = document.createElement('button');
+  del.className = 'linkbtn del';
+  del.textContent = 'Delete';
+  del.onclick = async (e) => {
+    e.stopPropagation();
+    if (!confirm(`Delete "${d.title || 'Untitled'}"?`)) return;
+    const r = await api('/api/decks/' + d.id, null, { method: 'DELETE' });
+    if (r.ok) card.remove();
+  };
+
+  card.append(h, meta, del);
+  return card;
+}
+
+async function openSavedDeck(id) {
+  const r = await api('/api/decks/' + id);
+  if (!r.ok) return;
+  openEditor(r.deck, { deckId: id });
+}
+
+function wireDashboard() {
+  $('#newDeckBtn').onclick = () => {
+    state.deckId = null;
+    loadGallery();                 // load templates with the signed-in token
+    document.documentElement.dataset.view = 'compose';
+  };
+}
+
+async function saveDeck() {
+  const btn = $('#saveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  const payload = { title: state.deck.title || 'Untitled', deck: state.deck };
+  const r = state.deckId
+    ? await api('/api/decks/' + state.deckId, payload, { method: 'PUT' })
+    : await api('/api/decks', payload);
+  btn.disabled = false; btn.textContent = 'Save';
+  if (!r.ok) { $('#stageNote').textContent = `Save failed — ${r.message}`; return; }
+  state.deckId = r.id ?? state.deckId;
+  btn.textContent = 'Saved ✓';
+  setTimeout(() => (btn.textContent = 'Save'), 1500);
 }
 
 // ------------------------------------------------------------------- frames
@@ -132,7 +278,22 @@ async function boot() {
 
   wireCompose();
   wireEditor();
-  loadGallery();
+  wireAuth();
+  wireDashboard();
+
+  await initSupabase(meta.supabase);
+  if (!sb) {
+    // No accounts configured — degrade to today's single-user behavior, but
+    // make the reason discoverable if someone lands on the auth view.
+    $('#authNotice').hidden = false;
+    document.documentElement.dataset.auth = 'out';
+    document.documentElement.dataset.view = 'compose';
+    loadGallery();                 // templates are the whole app in degraded mode
+    return;
+  }
+  sb.auth.onAuthStateChange((_e, session) => applySession(session));
+  const { data } = await sb.auth.getSession();
+  applySession(data?.session ?? null);
 }
 
 const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
@@ -336,6 +497,7 @@ async function generate() {
     err.appendChild(document.createTextNode(result.message));
     return;
   }
+  if (typeof result.credits === 'number') { state.credits = result.credits; renderCredits(); }
   openEditor(result.deck, result);
 }
 
@@ -379,6 +541,7 @@ async function loadGallery() {
 function openEditor(deck, info = {}) {
   state.deck = deck;
   state.index = 0;
+  state.deckId = info.deckId ?? null;
   document.documentElement.dataset.view = 'editor';
 
   $('#deckTitle').value = deck.title ?? '';
@@ -400,9 +563,14 @@ function openEditor(deck, info = {}) {
 }
 
 function wireEditor() {
-  $('#backBtn').onclick = () => { document.documentElement.dataset.view = 'compose'; };
+  $('#backBtn').onclick = () => {
+    state.deckId = null;
+    document.documentElement.dataset.view = state.user ? 'dashboard' : 'compose';
+    if (state.user) loadDashboard();
+  };
   $('#prevSlide').onclick = () => selectSlide(state.index - 1);
   $('#nextSlide').onclick = () => selectSlide(state.index + 1);
+  $('#saveBtn').onclick = saveDeck;
   $('#renderBtn').onclick = renderPngs;
   $('#sheetX').onclick = () => ($('#sheet').hidden = true);
   $('#sheet').onclick = (e) => { if (e.target === $('#sheet')) $('#sheet').hidden = true; };

@@ -28,8 +28,42 @@
       <i class="dot"></i><span id="modelName">…</span>
     </span>
     <span class="pill pill-quiet" title="Template-first carousels never call the model">templates · free</span>
+    <button class="pill acct" id="dashLink" title="My decks" hidden>My decks</button>
+    <span class="pill credits acct" id="creditsPill" title="AI generations left" hidden>
+      <b id="creditsNum">–</b>&nbsp;credits
+    </span>
+    <span class="acct email" id="userEmail" hidden></span>
+    <button class="linkbtn acct" id="logoutBtn" hidden>Sign out</button>
   </div>
 </header>
+
+<!-- ================================================================= AUTH -->
+<main class="view view-auth" id="viewAuth">
+  <section class="authcard">
+    <h1>Storyloom</h1>
+    <p class="authsub">Text in, carousel out. Sign in to pick up your decks.</p>
+    <form id="authForm" data-mode="signin">
+      <label>Email<input id="authEmail" type="email" autocomplete="email" required /></label>
+      <label>Password<input id="authPassword" type="password" autocomplete="current-password" minlength="6" required /></label>
+      <button class="btn-go" id="authSubmit" type="submit">Sign in</button>
+      <p class="err" id="authErr" hidden></p>
+    </form>
+    <button class="linkbtn" id="authToggle">New here? Create an account</button>
+    <p class="authnotice" id="authNotice" hidden>
+      Accounts aren't configured on this server yet. See <code>docs/setup-supabase.md</code>.
+    </p>
+  </section>
+</main>
+
+<!-- ============================================================ DASHBOARD -->
+<main class="view view-dashboard" id="viewDashboard">
+  <div class="dashhead">
+    <h1>My decks</h1>
+    <button class="btn-go sm" id="newDeckBtn">+ New carousel</button>
+  </div>
+  <p class="dashempty" id="dashEmpty" hidden>No decks yet. Hit <b>New carousel</b> to make your first.</p>
+  <section class="deckgrid" id="deckGrid"></section>
+</main>
 
 <!-- ============================================================== COMPOSE -->
 <main class="view view-compose" id="viewCompose">
@@ -113,6 +147,7 @@
     <div class="editbar-right">
       <span class="badge-source" id="deckSource"></span>
       <span class="vstate" id="vstate" title="Live schema + lint check"></span>
+      <button class="btn-ghost sm" id="saveBtn">Save</button>
       <button class="btn-go sm" id="renderBtn"><span class="label">Render PNGs</span></button>
     </div>
   </div>
