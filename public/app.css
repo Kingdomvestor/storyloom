@@ -40,8 +40,14 @@ body {
 
 /* view switching driven by <html data-view> */
 .view { display: none; }
+html[data-view="auth"] .view-auth { display: block; }
+html[data-view="dashboard"] .view-dashboard { display: block; }
 html[data-view="compose"] .view-compose { display: block; }
 html[data-view="editor"] .view-editor { display: block; }
+
+/* account controls in the header show only when signed in */
+.acct { display: none; }
+html[data-auth="in"] .acct { display: inline-flex; }
 
 button { font-family: inherit; cursor: pointer; }
 input, textarea { font-family: inherit; }
@@ -627,3 +633,32 @@ textarea:focus, input:focus {
   .panel { border-left: 0; border-top: 1px solid var(--line-soft); }
   .panel-body { max-height: none; }
 }
+
+/* ============================================================ AUTH VIEW */
+.view-auth { max-width: 420px; margin: 0 auto; padding: 64px 20px; }
+.authcard { border: 1px solid var(--line, #2a2a2a); border-radius: 16px; padding: 32px; }
+.authcard h1 { margin: 0 0 4px; }
+.authsub { color: var(--dim); margin: 0 0 24px; }
+#authForm label { display: block; margin-bottom: 14px; font-size: 14px; color: var(--dim); }
+#authForm input { display: block; width: 100%; margin-top: 6px; padding: 10px 12px;
+  border-radius: 10px; border: 1px solid var(--line, #2a2a2a); background: transparent; color: inherit; font-size: 15px; }
+#authForm .btn-go { width: 100%; margin-top: 6px; }
+#authToggle { display: block; margin: 16px auto 0; }
+.authnotice { margin-top: 20px; color: var(--dim); font-size: 13px; text-align: center; }
+
+/* ========================================================= DASHBOARD VIEW */
+.view-dashboard { max-width: 1000px; margin: 0 auto; padding: 40px 20px 90px; }
+.dashhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.dashhead h1 { margin: 0; }
+.dashempty { color: var(--dim); }
+.deckgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.deckcard { border: 1px solid var(--line, #2a2a2a); border-radius: 14px; padding: 16px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 8px; transition: border-color .15s; }
+.deckcard:hover { border-color: var(--gold, #c8a24a); }
+.deckcard h3 { margin: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deckcard .meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); }
+.deckcard .del { align-self: flex-end; margin-top: 4px; }
+
+/* header credits pill */
+.pill.credits b { color: var(--gold, #c8a24a); }
+.email { color: var(--dim); font-size: 13px; align-items: center; }
