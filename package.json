@@ -12,6 +12,7 @@
     "generate": "node src/generate.js",
     "extract": "node src/extract.js",
     "test": "node --test",
+    "verify:supabase": "node scripts/verify-supabase.mjs",
     "render:all": "node src/render.js fixtures/sample-5.json && node src/render.js fixtures/sample-10.json && node src/render.js fixtures/sample-ugly.json"
   },
   "dependencies": {
