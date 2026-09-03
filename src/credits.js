@@ -7,19 +7,19 @@
 import { admin } from './supabase.js';
 
 export async function spend(userId) {
-  const { data, error } = await admin.rpc('spend_credit', { uid: userId });
+  const { data, error } = await admin().rpc('spend_credit', { uid: userId });
   if (error) throw new Error(`spend_credit: ${error.message}`);
   return typeof data === 'number' ? data : null; // null → out of credits
 }
 
 export async function refund(userId) {
-  const { data, error } = await admin.rpc('add_credit', { uid: userId });
+  const { data, error } = await admin().rpc('add_credit', { uid: userId });
   if (error) throw new Error(`add_credit: ${error.message}`);
   return typeof data === 'number' ? data : null;
 }
 
 export async function balance(userId) {
-  const { data, error } = await admin
+  const { data, error } = await admin()
     .from('profiles').select('credits').eq('id', userId).single();
   if (error) throw new Error(`balance: ${error.message}`);
   return data.credits;

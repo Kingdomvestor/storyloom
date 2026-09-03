@@ -6,7 +6,7 @@
 import { admin } from './supabase.js';
 
 export async function list(userId) {
-  const { data, error } = await admin.from('decks')
+  const { data, error } = await admin().from('decks')
     .select('id, title, source, updated_at')
     .eq('user_id', userId)
     .order('updated_at', { ascending: false });
@@ -15,7 +15,7 @@ export async function list(userId) {
 }
 
 export async function get(userId, id) {
-  const { data, error } = await admin.from('decks')
+  const { data, error } = await admin().from('decks')
     .select('id, title, source, deck, updated_at')
     .eq('user_id', userId).eq('id', id).maybeSingle();
   if (error) throw new Error(`decks.get: ${error.message}`);
@@ -23,7 +23,7 @@ export async function get(userId, id) {
 }
 
 export async function create(userId, { title, source, deck }) {
-  const { data, error } = await admin.from('decks')
+  const { data, error } = await admin().from('decks')
     .insert({ user_id: userId, title, source, deck })
     .select('id').single();
   if (error) throw new Error(`decks.create: ${error.message}`);
@@ -31,7 +31,7 @@ export async function create(userId, { title, source, deck }) {
 }
 
 export async function update(userId, id, { title, source, deck }) {
-  const { data, error } = await admin.from('decks')
+  const { data, error } = await admin().from('decks')
     .update({ title, source, deck, updated_at: new Date().toISOString() })
     .eq('user_id', userId).eq('id', id)
     .select('id').maybeSingle();
@@ -40,7 +40,7 @@ export async function update(userId, id, { title, source, deck }) {
 }
 
 export async function remove(userId, id) {
-  const { error, count } = await admin.from('decks')
+  const { error, count } = await admin().from('decks')
     .delete({ count: 'exact' })
     .eq('user_id', userId).eq('id', id);
   if (error) throw new Error(`decks.remove: ${error.message}`);
