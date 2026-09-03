@@ -56,23 +56,30 @@ let sb = null; // supabase browser client, or null when unconfigured
 // ----------------------------------------------------------------- transport
 async function api(path, body, opts = {}) {
   const method = opts.method ?? (body ? 'POST' : 'GET');
-  const headers = {};
-  if (body) headers['content-type'] = 'application/json';
-  if (sb) {
-    const { data } = await sb.auth.getSession();
-    const token = data?.session?.access_token;
-    if (token) headers.authorization = `Bearer ${token}`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const headers = {};
+    if (body) headers['content-type'] = 'application/json';
+    if (sb) {
+      const { data } = attempt
+        ? await sb.auth.refreshSession().catch(() => ({ data: null }))
+        : await sb.auth.getSession();
+      const token = data?.session?.access_token;
+      if (token) headers.authorization = `Bearer ${token}`;
+    }
+    const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      return { ok: false, kind: 'bad_response', message: `${res.status} ${res.statusText}` };
+    }
+    if (data && data.ok === false && data.kind === 'unauthorized' && sb && attempt === 0) continue;
+    if (data && data.ok === false && data.kind === 'unauthorized' && sb) {
+      await sb.auth.signOut();
+      await applySession(null, { navigate: true });
+    }
+    return data;
   }
-  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
-  let data;
-  try {
-    data = await res.json();
-  } catch {
-    return { ok: false, kind: 'bad_response', message: `${res.status} ${res.statusText}` };
-  }
-  // Any expired/invalid session flips the whole app back to the auth view.
-  if (data && data.ok === false && data.kind === 'unauthorized' && sb) applySession(null);
-  return data;
 }
 
 // ------------------------------------------------------------------ accounts
@@ -83,19 +90,29 @@ async function initSupabase(cfg) {
   return sb;
 }
 
+function setAuthMessage(text, { error = false } = {}) {
+  const msg = $('#authMsg');
+  const err = $('#authErr');
+  msg.hidden = true;
+  err.hidden = true;
+  const node = error ? err : msg;
+  node.textContent = text;
+  node.hidden = false;
+}
+
 /** Single source of truth for "who is signed in" → drives the view + header. */
-async function applySession(session) {
+async function applySession(session, { navigate = true } = {}) {
   state.user = session?.user ?? null;
   document.documentElement.dataset.auth = state.user ? 'in' : 'out';
   if (!state.user) {
     state.credits = null;
     state.deckId = null;
-    document.documentElement.dataset.view = 'auth';
+    if (navigate) document.documentElement.dataset.view = 'auth';
     return;
   }
   $('#userEmail').textContent = state.user.email;
   await loadDashboard();                        // sets credits + grid
-  document.documentElement.dataset.view = 'dashboard';
+  if (state.user && navigate) document.documentElement.dataset.view = 'dashboard';
 }
 
 function renderCredits() {
@@ -108,6 +125,21 @@ function renderCredits() {
   $('.cost', btn).textContent = out ? 'no credits' : '1 credit';
 }
 
+async function handleAuthEvent(event, session) {
+  if (event === 'SIGNED_OUT') {
+    await applySession(null, { navigate: true });
+    return;
+  }
+
+  if (!session?.user) {
+    await applySession(null, { navigate: document.documentElement.dataset.view === 'auth' });
+    return;
+  }
+
+  const wasSignedOut = !state.user;
+  await applySession(session, { navigate: wasSignedOut || document.documentElement.dataset.view === 'auth' });
+}
+
 function wireAuth() {
   const form = $('#authForm');
   form.onsubmit = async (e) => {
@@ -115,19 +147,32 @@ function wireAuth() {
     if (!sb) return;
     const email = $('#authEmail').value.trim();
     const password = $('#authPassword').value;
-    const err = $('#authErr');
-    err.hidden = true;
+    $('#authErr').hidden = true;
+    $('#authMsg').hidden = true;
     $('#authSubmit').disabled = true;
-    const { error } = form.dataset.mode === 'signup'
+    const mode = form.dataset.mode;
+    const { data, error } = mode === 'signup'
       ? await sb.auth.signUp({ email, password })
       : await sb.auth.signInWithPassword({ email, password });
     $('#authSubmit').disabled = false;
-    if (error) { err.hidden = false; err.textContent = error.message; }
+    if (error) {
+      setAuthMessage(error.message, { error: true });
+      return;
+    }
+    if (data?.session) {
+      await applySession(data.session);
+      return;
+    }
+    if (mode === 'signup') {
+      setAuthMessage('Account created. Check your email to confirm it, then sign in.');
+    }
     // success → onAuthStateChange fires applySession → dashboard
   };
   $('#authToggle').onclick = () => {
     const to = form.dataset.mode === 'signin' ? 'signup' : 'signin';
     form.dataset.mode = to;
+    $('#authErr').hidden = true;
+    $('#authMsg').hidden = true;
     $('#authSubmit').textContent = to === 'signup' ? 'Create account' : 'Sign in';
     $('#authToggle').textContent = to === 'signup'
       ? 'Have an account? Sign in' : 'New here? Create an account';
@@ -139,11 +184,17 @@ function wireAuth() {
 
 async function loadDashboard() {
   const r = await api('/api/decks');
-  if (!r.ok) return;
+  if (!r.ok) {
+    const empty = $('#dashEmpty');
+    empty.hidden = false;
+    empty.textContent = `Could not load decks: ${r.message}`;
+    return;
+  }
   state.credits = r.credits;
   renderCredits();
   const grid = $('#deckGrid');
   grid.innerHTML = '';
+  $('#dashEmpty').textContent = 'No decks yet. Hit New carousel to make your first.';
   $('#dashEmpty').hidden = r.decks.length > 0;
   for (const d of r.decks) grid.appendChild(deckCard(d));
 }
@@ -291,7 +342,7 @@ async function boot() {
     loadGallery();                 // templates are the whole app in degraded mode
     return;
   }
-  sb.auth.onAuthStateChange((_e, session) => applySession(session));
+  sb.auth.onAuthStateChange((event, session) => handleAuthEvent(event, session));
   const { data } = await sb.auth.getSession();
   applySession(data?.session ?? null);
 }
