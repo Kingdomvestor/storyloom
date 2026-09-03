@@ -1,13 +1,17 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-// Import the app with NO Supabase env — the degradation contract. The start
-// guard in server.js is skipped on import, so .env is never loaded here.
+// Import the app, THEN assert the degradation contract by clearing Supabase env.
+// Importing server.js pulls in generate.js, whose module-scope loadEnvFile() (the
+// Sept 2 "read config before the constants" fix) loads .env — which now also
+// carries the Supabase keys. So the vars must be cleared *after* the import, not
+// before: every consumer reads env lazily at request time and nothing reloads
+// .env again, so degraded mode holds for the rest of the process.
+const { app } = await import('../src/server.js');
+
 delete process.env.SUPABASE_URL;
 delete process.env.SUPABASE_ANON_KEY;
 delete process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-const { app } = await import('../src/server.js');
 
 let base;
 let server;

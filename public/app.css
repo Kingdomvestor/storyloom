@@ -40,6 +40,7 @@ body {
 
 /* view switching driven by <html data-view> */
 .view { display: none; }
+html[data-view="boot"] .view-boot { display: grid; }
 html[data-view="auth"] .view-auth { display: block; }
 html[data-view="dashboard"] .view-dashboard { display: block; }
 html[data-view="compose"] .view-compose { display: block; }
@@ -316,6 +317,26 @@ textarea:focus, input:focus {
 }
 /* Pushed to the far edge so the message can grow without shoving the count. */
 .working .clock { margin-left: auto; color: var(--dim); font-size: 12px; }
+
+/* ------------------------------------------------------------------- boot */
+.view-boot {
+  min-height: calc(100vh - 56px);
+  place-items: center;
+  padding: 32px 20px;
+}
+.bootbox {
+  display: flex; align-items: center; gap: 12px;
+  color: var(--muted);
+  font-size: 13px; font-weight: 600;
+}
+.bootbox p { margin: 0; }
+.bootmark {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid var(--line);
+  border-top-color: var(--gold);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* --------------------------------------------------------------- or line */
 .orline {
@@ -644,6 +665,11 @@ textarea:focus, input:focus {
   border-radius: 10px; border: 1px solid var(--line, #2a2a2a); background: transparent; color: inherit; font-size: 15px; }
 #authForm .btn-go { width: 100%; margin-top: 6px; }
 #authToggle { display: block; margin: 16px auto 0; }
+.authmsg {
+  margin: 12px 0 0; font-size: 13px; line-height: 1.5;
+  padding: 11px 13px; border-radius: 10px;
+  color: var(--green); background: rgba(61, 220, 132, .08); border: 1px solid rgba(61, 220, 132, .25);
+}
 .authnotice { margin-top: 20px; color: var(--dim); font-size: 13px; text-align: center; }
 
 /* ========================================================= DASHBOARD VIEW */
