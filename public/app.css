@@ -720,3 +720,63 @@ textarea:focus, input:focus {
 /* header credits pill */
 .pill.credits b { color: var(--gold, #c8a24a); }
 .email { color: var(--dim); font-size: 13px; align-items: center; }
+
+/* ============================================================= WEEK B — EDITBAR */
+
+/* Autosave state. Deliberately quiet: it is reassurance, not a control, so it
+   never takes colour except while something is actually pending. */
+.autostate { font-size: 12px; font-weight: 600; color: var(--dim); }
+.autostate.pending { color: var(--amber); }
+.autostate.saved { color: var(--dim); }
+.autostate.failed { color: var(--red); }
+
+.undogroup { display: flex; gap: 4px; }
+.btn-ghost.icon { width: 30px; padding: 0; font-size: 15px; line-height: 1; }
+.btn-ghost.icon:disabled { opacity: .32; cursor: default; }
+
+/* Download menu. A popup rather than three buttons in the bar: the bar is
+   already at five controls and only one of the three is ever wanted at a time. */
+.menu { position: relative; }
+.menu-pop {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 40;
+  min-width: 190px; padding: 5px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: var(--shadow);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.menu-pop button {
+  all: unset; box-sizing: border-box;
+  padding: 8px 10px; border-radius: 7px; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--text); text-align: left;
+}
+.menu-pop button:hover { background: var(--raise); }
+.menu-pop button:disabled { color: var(--dim); cursor: default; background: none; }
+.caret { font-size: 10px; opacity: .8; }
+
+/* ======================================================= WEEK B — BRAND + AI */
+
+/* Saved brands. Rows, not cards: this is a list you scan and pick from, and the
+   panel is 300px wide — a card grid here would fit one card per row anyway. */
+.brandrow {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 0; border-bottom: 1px solid var(--line-soft);
+}
+.brandrow:last-of-type { border-bottom: 0; }
+.brandrow .who { min-width: 0; font-size: 13px; }
+.brandrow .who b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brandrow .who span { color: var(--dim); font-size: 11.5px; }
+.brandrow .acts { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
+.brandrow .acts .linkbtn { font-size: 11.5px; }
+.brandrow.isdefault .who b::after { content: " ★"; color: var(--gold); font-size: 11px; }
+.defaultflag { font-size: 11px; color: var(--gold); }
+.brandactions { display: flex; gap: 14px; margin-top: 12px; }
+.brandactions .linkbtn { font-size: 12px; }
+
+/* AI tab. Presets wrap into a soft grid; each one is a whole action, so they get
+   real buttons rather than chips that look like filters. */
+.aipresets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.aipresets .btn-ghost.sm { font-size: 12px; padding: 6px 11px; }
+#tabAi .btn-go { height: 44px; margin-top: 4px; }
+.ainote { margin: 12px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); min-height: 1em; }
+.ainote.good { color: var(--gold); }
+.ainote.bad { color: var(--red); }

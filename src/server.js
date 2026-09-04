@@ -22,13 +22,16 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
 import { schema, validateDeck, deckWarnings, repairDeck } from './validate.js';
-import { generateDeck, MODEL } from './generate.js';
+import { generateDeck, rewriteSlide, REWRITE_PRESETS, MODEL } from './generate.js';
 import { extractArticle } from './extract.js';
 import { allDefaults, PLACEHOLDER_BRAND, STYLES } from './defaults.js';
-import { renderDeck } from './render.js';
+import { renderDeck, renderDeckBuffers } from './render.js';
+import { zipSync } from './zip.js';
+import { imagesToPdf } from './pdf.js';
 import { hasSupabase, publicConfig, getUser } from './supabase.js';
 import * as credits from './credits.js';
 import * as decks from './decks.js';
+import * as brands from './brands.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..');
@@ -78,6 +81,7 @@ const STATUS_BY_KIND = {
   unsupported_protocol: 400,
   blocked_host: 400,
   bad_deck: 400,
+  bad_input: 400,
   unauthorized: 401,
   no_credits: 402,      // out of credits — "Payment Required" fits the meaning
   not_found: 404,
@@ -168,6 +172,10 @@ app.get('/api/meta', (_req, res) => {
       brand_handle: schema.properties.brand.properties.handle.maxLength,
     },
     placeholderBrand: PLACEHOLDER_BRAND,
+    // Labels only. The instruction text behind each preset is prompt copy and
+    // stays server-side, where it is written and tuned.
+    rewritePresets: REWRITE_PRESETS.map(({ id, label }) => ({ id, label })),
+    exportFormats: ['png', 'zip', 'pdf'],
   });
 });
 
@@ -265,6 +273,65 @@ app.post('/api/validate', requireUser, (req, res) => {
   res.json({ ok: true, valid, errors, warnings: deckWarnings(deck) });
 });
 
+/**
+ * The AI tab: rewrite one slide. Costs a credit, because it is a model call and
+ * a free rewrite button is a free model call in a loop.
+ *
+ * The client sends the slide, not the deck — the rewrite only ever touches one,
+ * and generate.js clamps every field it gets back to the schema's caps, so there
+ * is nothing a whole-deck round trip would catch that this doesn't.
+ */
+app.post('/api/rewrite', requireUser, guard(async (req, res) => {
+  const body = req.body ?? {};
+  if (!body.slide || typeof body.slide !== 'object') {
+    return fail(res, 'bad_deck', 'No slide in the request body.');
+  }
+
+  let remaining = null;
+  if (req.user) {
+    try {
+      remaining = await credits.spend(req.user.id);
+    } catch (err) {
+      console.error('spend_credit failed:', err);
+      return fail(res, 'server_error', 'Could not check your credits. Try again.');
+    }
+    if (remaining === null) return fail(res, 'no_credits', "You're out of credits.");
+  }
+
+  const result = await rewriteSlide({
+    slide: body.slide,
+    preset: body.preset,
+    instruction: body.instruction,
+    index: body.index,
+    total: body.total,
+    title: body.title,
+    narrative_type: body.narrative_type,
+    platform: body.platform,
+  });
+
+  // Refund on failure, and also when the model handed the slide back untouched —
+  // a credit spent for no change is the kind of charge that loses trust.
+  const worthless = !result.ok || result.changed === false;
+  if (req.user && worthless) {
+    const back = await credits.refund(req.user.id).catch((e) => {
+      console.error('refund failed:', e);
+      return null;
+    });
+    if (back !== null) remaining = back;
+  }
+  if (!result.ok) return fail(res, result.kind, result.message, { notes: result.notes });
+
+  if (result.changed === false) result.notes.push('credit refunded — nothing changed');
+  res.json({
+    ok: true,
+    slide: result.slide,
+    changed: result.changed,
+    notes: result.notes,
+    usage: result.usage,
+    ...(remaining !== null ? { credits: remaining } : {}),
+  });
+}));
+
 // ------------------------------------------------------------------ deck store
 // Account-only. Every row is scoped by the verified user id (decks.js), so a
 // deck that isn't yours is indistinguishable from one that doesn't exist.
@@ -283,13 +350,25 @@ function validated({ title, source, deck }) {
   };
 }
 
-/** List the signed-in user's decks (newest first) plus their credit balance. */
+/**
+ * List the signed-in user's decks, plus the three things the dashboard and the
+ * editor both need on first load: the credit balance, the plan (which decides
+ * whether the watermark toggle is honoured at export) and the default brand, so
+ * a deck started from a template already carries the user's footer.
+ */
 app.get('/api/decks', requireUser, requireAccount, guard(async (req, res) => {
-  const [rows, remaining] = await Promise.all([
+  const [rows, account, brand] = await Promise.all([
     decks.list(req.user.id),
-    credits.balance(req.user.id),
+    credits.profile(req.user.id),
+    brands.getDefault(req.user.id),
   ]);
-  res.json({ ok: true, decks: rows, credits: remaining });
+  res.json({
+    ok: true,
+    decks: rows,
+    credits: account.credits,
+    plan: account.plan,
+    defaultBrand: brands.toDeckBrand(brand) ?? null,
+  });
 }));
 
 /** Fetch one deck for the editor. */
@@ -323,10 +402,46 @@ app.delete('/api/decks/:id', requireUser, requireAccount, guard(async (req, res)
   res.json({ ok: true });
 }));
 
+// ---------------------------------------------------------------------- brands
+// Account-only, same scoping rule as decks. A brand is the footer identity
+// authored once instead of retyped into every deck; the deck still carries a
+// resolved `brand` object, because that is what the schema and the template read.
+
+/** A brand with neither a name nor a handle renders as nothing — refuse it. */
+function validBrand(body) {
+  const row = brands.normalise(body ?? {});
+  if (!row.name && !row.handle) return { error: 'A brand needs a name or a handle.' };
+  return { value: { ...row, is_default: body?.is_default } };
+}
+
+app.get('/api/brands', requireUser, requireAccount, guard(async (req, res) => {
+  res.json({ ok: true, brands: await brands.list(req.user.id) });
+}));
+
+app.post('/api/brands', requireUser, requireAccount, guard(async (req, res) => {
+  const input = validBrand(req.body);
+  if (input.error) return fail(res, 'bad_input', input.error);
+  res.json({ ok: true, brand: await brands.create(req.user.id, input.value) });
+}));
+
+app.put('/api/brands/:id', requireUser, requireAccount, guard(async (req, res) => {
+  const input = validBrand(req.body);
+  if (input.error) return fail(res, 'bad_input', input.error);
+  const row = await brands.update(req.user.id, req.params.id, input.value);
+  if (!row) return fail(res, 'not_found', 'Brand not found.');
+  res.json({ ok: true, brand: row });
+}));
+
+app.delete('/api/brands/:id', requireUser, requireAccount, guard(async (req, res) => {
+  const gone = await brands.remove(req.user.id, req.params.id);
+  if (!gone) return fail(res, 'not_found', 'Brand not found.');
+  res.json({ ok: true });
+}));
+
 /**
- * Week A evidence: PNGs on disk. Deliberately not an export endpoint — no zip,
- * no PDF, no download headers, no server-side watermark enforcement. Those are
- * Week B and building them now is how Week B's real work gets skipped.
+ * Week A evidence: PNGs on disk, served from /out and shown in the sheet. Kept
+ * alongside /api/export because the two answer different questions — this one
+ * gives the browser URLs it can display, export gives the user a file.
  */
 let renderSeq = 0;
 app.post('/api/render', requireUser, async (req, res) => {
@@ -370,6 +485,100 @@ app.post('/api/render', requireUser, async (req, res) => {
     fail(res, 'render_error', err.message);
   }
 });
+
+// ---------------------------------------------------------------------- export
+// The download path: same renders as /api/render, but the bytes come back in the
+// response with attachment headers instead of landing in out/ as URLs.
+
+const EXPORT_FORMATS = new Set(['png', 'zip', 'pdf']);
+const EXPORT_TYPES = { png: 'image/png', zip: 'application/zip', pdf: 'application/pdf' };
+
+/** A filename an OS will accept, from whatever the user called the deck. */
+function slugify(title, fallback = 'carousel') {
+  const slug = String(title ?? '')
+    .normalize('NFKD')            // é → e + ́ , so the accent strips instead of the letter
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/, '');
+  return slug || fallback;        // a title in a non-Latin script slugs to nothing
+}
+
+/**
+ * POST /api/export → the file itself.
+ *
+ * `format`: `zip` (one PNG per slide), `pdf` (one page per slide) or `png` (a
+ * single slide, chosen with `index`). The response is binary, so a failure has to
+ * be decided *before* any header is written — everything that can say
+ * `{ ok: false }` runs first, and res.end() is the last statement in the handler.
+ *
+ * Watermark: enforced here and only here. A checkbox in the browser is a request,
+ * not a decision, and the export is the one moment the server has the last word.
+ */
+app.post('/api/export', requireUser, guard(async (req, res) => {
+  const body = req.body ?? {};
+  const format = String(body.format ?? 'zip').toLowerCase();
+  if (!EXPORT_FORMATS.has(format)) {
+    return fail(res, 'bad_input', `Unknown export format "${format}". Use png, zip or pdf.`);
+  }
+  if (!body.deck || typeof body.deck !== 'object') {
+    return fail(res, 'bad_deck', 'No deck in the request body.');
+  }
+
+  // Same contract as /api/render: repair rather than refuse. A download button
+  // that reports a schema error is a download button that does nothing.
+  let deck = body.deck;
+  if (!validateDeck(deck).valid) {
+    deck = repairDeck(deck);
+    const after = validateDeck(deck);
+    if (!after.valid) return fail(res, 'render_error', `Unrepairable deck: ${after.errors.join('; ')}`);
+  }
+
+  // Degraded mode has no accounts and therefore no tiers, so it is left alone:
+  // the Week A single-user flow keeps working exactly as it did.
+  let forced = false;
+  if (req.user) {
+    const { plan } = await credits.profile(req.user.id);
+    if (plan !== 'pro' && deck.watermark !== true) {
+      deck = { ...deck, watermark: true };
+      forced = true;
+    }
+  }
+
+  const shots = await queueRender(async () => {
+    const browser = await getBrowser();
+    return renderDeckBuffers(deck, {
+      browser,
+      quiet: true,
+      only: format === 'png' ? (body.index ?? 0) : undefined,
+    });
+  });
+
+  const slug = slugify(deck.title);
+  const stamp = new Date().toISOString().slice(0, 10);
+  let bytes;
+  let filename;
+  if (format === 'pdf') {
+    bytes = imagesToPdf(shots.map((s) => s.buffer));
+    filename = `${slug}-${stamp}.pdf`;
+  } else if (format === 'zip') {
+    bytes = zipSync(shots.map(({ name, buffer }) => ({ name, data: buffer })));
+    filename = `${slug}-${stamp}.zip`;
+  } else {
+    bytes = shots[0].buffer;
+    filename = `${slug}-${shots[0].name}`;
+  }
+
+  res.setHeader('Content-Type', EXPORT_TYPES[format]);
+  res.setHeader('Content-Length', bytes.length);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Cache-Control', 'no-store');
+  // A binary response has nowhere to put a note, and the UI needs to be able to
+  // say why the watermark is there when the toggle was off.
+  res.setHeader('X-Storyloom-Watermark', forced ? 'forced' : String(Boolean(deck.watermark)));
+  res.end(bytes);
+}));
 
 app.get('/api/health', async (_req, res) => {
   const browser = await browserPromise?.catch(() => null);

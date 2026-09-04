@@ -29,10 +29,27 @@ export async function refund(userId) {
   return typeof data === 'number' ? data : null;
 }
 
-export async function balance(userId) {
+/**
+ * The row behind both the credit counter and the tier check: `{ credits, plan }`.
+ * One read, because every caller that wants the balance also wants to know
+ * whether this user is allowed to turn the watermark off.
+ */
+export async function profile(userId) {
   await ensure(userId);
-  const { data, error } = await admin()
-    .from('profiles').select('credits').eq('id', userId).single();
-  if (error) throw new Error(`balance: ${error.message}`);
-  return data.credits;
+  const client = admin();
+  // `plan` arrives with migration 0002. The fallback keeps a database that has
+  // only 0001 applied fully working — it simply reads as the free tier, which is
+  // the column's default anyway.
+  let { data, error } = await client
+    .from('profiles').select('credits, plan').eq('id', userId).single();
+  if (error) {
+    ({ data, error } = await client
+      .from('profiles').select('credits').eq('id', userId).single());
+    if (error) throw new Error(`profile: ${error.message}`);
+  }
+  return { credits: data.credits, plan: data.plan ?? 'free' };
+}
+
+export async function balance(userId) {
+  return (await profile(userId)).credits;
 }

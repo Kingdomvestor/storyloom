@@ -10,7 +10,7 @@
  *   node src/render.js fixtures/sample-5.json out/dev
  */
 import puppeteer from 'puppeteer';
-import { readFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve, basename, extname } from 'node:path';
 import { validateDeck, repairDeck } from './validate.js';
@@ -22,17 +22,24 @@ const HEIGHT = 1350;
 const READY_TIMEOUT_MS = 15000;
 
 /**
- * Render a deck to one PNG per slide.
+ * Render a deck to one PNG *buffer* per slide: `[{ name, buffer }]`.
+ *
+ * This is the primitive both callers want. /api/export needs the bytes in memory
+ * to zip them or wrap them in a PDF, and writing them to disk first only to read
+ * them back would leave a directory per download to clean up. renderDeck() wraps
+ * this and writes.
  *
  * `opts.browser` lets a long-lived process (the Express server) hand in a
  * browser it already owns. Launching Chrome costs ~700ms and a fresh profile
  * directory per call, and three back-to-back launches failed once on Sept 1 for
  * reasons never identified — so the server keeps one instance and passes it in.
  * An injected browser is never closed here; whoever opened it owns its lifetime.
+ *
+ * `opts.only` renders a single slide by index and nothing else, for "download
+ * this slide as a PNG". The name still carries the slide's real position, so a
+ * file called slide-07.png is the seventh slide however it was exported.
  */
-export async function renderDeck(deck, outDir, { browser: injected } = {}) {
-  mkdirSync(outDir, { recursive: true });
-
+export async function renderDeckBuffers(deck, { browser: injected, quiet = false, only } = {}) {
   const browser =
     injected ??
     (await puppeteer.launch({
@@ -48,26 +55,40 @@ export async function renderDeck(deck, outDir, { browser: injected } = {}) {
     await page.goto(pathToFileURL(TEMPLATE).href, { waitUntil: 'networkidle0' });
 
     const count = await page.evaluate((d) => window.STORYLOOM.setDeck(d), deck);
-    const files = [];
-    for (let i = 0; i < count; i++) {
+    const wanted =
+      only == null
+        ? [...Array(count).keys()]
+        : [Math.min(Math.max(0, Math.round(Number(only)) || 0), count - 1)];
+    const shots = [];
+    for (const i of wanted) {
       await page.evaluate((idx) => window.STORYLOOM.renderSlide(idx), i);
       await page.waitForFunction(
         () => document.documentElement.dataset.ready === 'true',
         { timeout: READY_TIMEOUT_MS }
       );
-      const file = join(outDir, `slide-${String(i + 1).padStart(2, '0')}.png`);
-      await page.screenshot({ path: file, clip: { x: 0, y: 0, width: WIDTH, height: HEIGHT } });
-      files.push(file);
-      if (!injected) process.stdout.write(`  ✓ slide ${i + 1}/${count}\r`);
+      const shot = await page.screenshot({ clip: { x: 0, y: 0, width: WIDTH, height: HEIGHT } });
+      shots.push({ name: `slide-${String(i + 1).padStart(2, '0')}.png`, buffer: Buffer.from(shot) });
+      if (!quiet) process.stdout.write(`  ✓ slide ${shots.length}/${wanted.length}\r`);
     }
-    if (!injected) console.log(`  ✓ ${count} slides                `);
-    return files;
+    if (!quiet) console.log(`  ✓ ${shots.length} slides                `);
+    return shots;
   } finally {
     // Close the page either way — a leaked page in the shared browser is a leak
     // that never gets collected, because the browser itself never closes.
     if (page) await page.close().catch(() => {});
     if (!injected) await browser.close();
   }
+}
+
+/** Render a deck to one PNG per slide on disk. Returns the file paths. */
+export async function renderDeck(deck, outDir, opts = {}) {
+  mkdirSync(outDir, { recursive: true });
+  const shots = await renderDeckBuffers(deck, { quiet: Boolean(opts.browser), ...opts });
+  return shots.map(({ name, buffer }) => {
+    const file = join(outDir, name);
+    writeFileSync(file, buffer);
+    return file;
+  });
 }
 
 async function main() {

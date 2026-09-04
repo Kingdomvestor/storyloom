@@ -205,9 +205,13 @@
     return out;
   }
 
+  // `data-field` names the deck field each block came from. Nothing in here reads
+  // it — it exists so the editor can turn a click on the canvas into an edit of
+  // the right field. Additive on purpose: an attribute costs the render nothing
+  // and keeps click-to-edit from needing a second copy of this layout.
   const field = (text, words, cls, tag = "div") => {
     if (text == null || text === "") return "";
-    return `<${tag} class="${cls}">${highlight(esc(text), words)}</${tag}>`;
+    return `<${tag} class="${cls}" data-field="${cls}">${highlight(esc(text), words)}</${tag}>`;
   };
 
   function footerHTML(s) {
@@ -237,9 +241,11 @@
     parts.push(field(s.subtitle, words, "subtitle", "h2"));
     parts.push(field(s.body, words, "body", "p"));
     if (Array.isArray(s.bullets) && s.bullets.length) {
-      parts.push(`<ul class="bullets">${s.bullets.map((b) => `<li>${highlight(esc(b), words)}</li>`).join("")}</ul>`);
+      parts.push(`<ul class="bullets">${s.bullets
+        .map((b, i) => `<li data-field="bullets.${i}">${highlight(esc(b), words)}</li>`)
+        .join("")}</ul>`);
     }
-    if (s.cta && s.cta.label) parts.push(`<div class="cta">${esc(s.cta.label)}</div>`);
+    if (s.cta && s.cta.label) parts.push(`<div class="cta" data-field="cta.label">${esc(s.cta.label)}</div>`);
     parts.push(`</div>`); // .stack
     parts.push(footerHTML(s));
     return parts.join("");

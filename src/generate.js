@@ -75,6 +75,34 @@ export const responseSchema = toGeminiSchema(schema, {
   omit: WITHHELD_FROM_MODEL,
 });
 
+/**
+ * The response shape for a single-slide rewrite: `{ slide: {...} }`.
+ *
+ * Built by wrapping the root schema rather than by handing `schema.$defs.slide`
+ * to the converter directly, because `$ref`/`$defs` are hard 400s at the API and
+ * the converter resolves them against whatever root it is given. Spreading the
+ * root keeps `$defs` in place for that resolution; only `properties` changes.
+ *
+ * `type` is withheld along with image and page_label: a slide's type is its
+ * position in the deck (slot 0 hook, last cta), which lint and repairDeck decide.
+ * Letting the model return one would just be a value we overwrite.
+ */
+export const slideResponseSchema = toGeminiSchema(
+  { ...schema, properties: { slide: { $ref: '#/$defs/slide' } }, required: ['slide'] },
+  { omit: ['slide.type', 'slide.image', 'slide.page_label'] }
+);
+
+/** The slide keys a rewrite is allowed to replace — everything the model authors. */
+const REWRITABLE_KEYS = [
+  'tagline',
+  'heading',
+  'subtitle',
+  'body',
+  'bullets',
+  'highlight_words',
+  'cta',
+];
+
 // ---------------------------------------------------------------- prompt build
 
 /**
@@ -82,10 +110,12 @@ export const responseSchema = toGeminiSchema(schema, {
  * never disagree about a cap. Hardcoding "max 60 characters" in the markdown is
  * how you get a model writing to a limit that moved three commits ago.
  */
-function describeBudgets() {
+function describeBudgets({ includeTitle = true } = {}) {
   const slide = schema.$defs.slide.properties;
   const required = new Set(schema.$defs.slide.required);
-  const lines = [`- \`title\` — max ${schema.properties.title.maxLength} characters`];
+  const lines = includeTitle
+    ? [`- \`title\` — max ${schema.properties.title.maxLength} characters`]
+    : [];
 
   for (const [name, def] of Object.entries(slide)) {
     if (WITHHELD_FROM_MODEL.includes(`slides.items.${name}`)) continue;
@@ -163,7 +193,7 @@ function unfence(text) {
  * One Gemini call, with retries for transport-level failure only.
  * Returns { ok: true, text, finishReason, usage } or { ok: false, kind, message }.
  */
-async function callGemini({ system, contents, model, attempts = 3 }) {
+async function callGemini({ system, contents, model, attempts = 3, format = responseSchema }) {
   const key = apiKey();
   if (!key) {
     return {
@@ -185,7 +215,7 @@ async function callGemini({ system, contents, model, attempts = 3 }) {
           contents,
           generationConfig: {
             responseMimeType: 'application/json',
-            responseSchema,
+            responseSchema: format,
             temperature: TEMPERATURE,
             maxOutputTokens: MAX_OUTPUT_TOKENS,
           },
@@ -444,7 +474,219 @@ export async function generateDeck(input = {}) {
   };
 }
 
+// --------------------------------------------------------------- slide rewrite
+
+/**
+ * The AI tab's presets. They live here, next to the prompt, rather than in the
+ * browser: the wording *is* prompt engineering, and a copy in app.js would be a
+ * second place to edit the day one of them turns out to over-trim. /api/meta
+ * hands the list to the UI, which renders one button per entry.
+ */
+export const REWRITE_PRESETS = [
+  {
+    id: 'punchier',
+    label: 'Punchier',
+    instruction:
+      'Tighten it. Stronger verbs, no hedging, no filler adjectives. Same meaning, fewer words.',
+  },
+  {
+    id: 'simpler',
+    label: 'Simpler',
+    instruction:
+      'Plain words and shorter sentences. A smart reader from outside this field should follow it without rereading.',
+  },
+  {
+    id: 'shorter',
+    label: 'Shorter',
+    instruction:
+      'Cut about a third of the words. Drop the least load-bearing sentence rather than shaving a word off every line.',
+  },
+  {
+    id: 'bullets',
+    label: 'To bullets',
+    instruction:
+      'Turn the body copy into 2 to 4 bullets, each a complete thought. Return `body` empty if the bullets replace it.',
+  },
+  {
+    id: 'highlights',
+    label: 'Pick highlights',
+    instruction:
+      'Change no wording at all. Return the text exactly as given and only choose highlight_words: one to three short phrases that already appear in this slide and carry its point.',
+  },
+];
+
+const SLIDE_CAPS = schema.$defs.slide.properties;
+
+/** The subset of a slide the model is shown — the words, not the plumbing. */
+function pickRewritable(slide) {
+  return Object.fromEntries(REWRITABLE_KEYS.filter((k) => k in slide).map((k) => [k, slide[k]]));
+}
+
+/**
+ * Merge a model-returned slide over the original, clamped to the schema's caps.
+ *
+ * Same instinct as brands.js `normalise()`: clamp in JS against the schema
+ * rather than hand a possibly-oversized field to Ajv and deal with the rejection.
+ * A rewrite that comes back one character long is a truncation the user can see
+ * and fix; a rejected request is a button that did nothing.
+ *
+ * Absent keys are left alone on purpose. A model that echoes only what it
+ * changed must not silently delete the tagline the user typed — but a key
+ * returned *empty* is an explicit clear, which is how "To bullets" empties body.
+ */
+function mergeRewrite(previous, next, notes) {
+  const merged = { ...previous };
+  const text = (v, cap) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, cap);
+
+  for (const key of REWRITABLE_KEYS) {
+    if (!(key in next)) continue;
+    const def = SLIDE_CAPS[key];
+
+    if (key === 'cta') {
+      // Which slide carries the cta is the app's decision (last slot), so a
+      // rewritten label is welcome and an invented cta is not.
+      const label = text(next.cta?.label, def.properties.label.maxLength);
+      if (previous.cta && label) merged.cta = { label };
+      continue;
+    }
+
+    if (def.type === 'array') {
+      const items = (Array.isArray(next[key]) ? next[key] : [])
+        .map((v) => text(v, def.items.maxLength))
+        .filter((v) => v.length >= (def.items.minLength ?? 1))
+        .slice(0, def.maxItems);
+      if (items.length) merged[key] = items;
+      else delete merged[key];
+      continue;
+    }
+
+    const value = text(next[key], def.maxLength);
+    if (value.length >= (def.minLength ?? 1)) merged[key] = value;
+    else delete merged[key];
+  }
+
+  if (!merged.heading) {
+    merged.heading = previous.heading;
+    notes.push('the rewrite came back with no heading — kept the original');
+  }
+  return clampHighlights(merged, notes);
+}
+
+/**
+ * A highlight word only does anything if it appears in the text being rendered —
+ * the template highlights by substring match. Enforcing that here, rather than
+ * leaving it to lint, is what makes the "Pick highlights" preset trustworthy:
+ * the alternative is a word that quietly renders as plain text and looks like
+ * the feature is broken.
+ */
+function clampHighlights(slide, notes) {
+  if (!slide.highlight_words?.length) return slide;
+  const haystack = [slide.tagline, slide.heading, slide.subtitle, slide.body, ...(slide.bullets ?? [])]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  const kept = slide.highlight_words.filter((w) => haystack.includes(w.toLowerCase()));
+  const dropped = slide.highlight_words.length - kept.length;
+  if (dropped) notes.push(`dropped ${dropped} highlight word(s) that are not in the slide text`);
+  if (kept.length) slide.highlight_words = kept;
+  else delete slide.highlight_words;
+  return slide;
+}
+
+const REWRITE_SYSTEM = [
+  'You are editing ONE slide of a social carousel. Return that slide only.',
+  '',
+  'Rules:',
+  '- Keep the slide making the same point. This is a rewrite, not a new idea.',
+  '- The character budgets below are hard limits enforced by a validator.',
+  '  Rephrase to fit rather than trimming a word off the end.',
+  '- Return only the fields that should exist afterwards. A field you leave out',
+  '  keeps what the user already wrote; a field you return empty is cleared.',
+  '- highlight_words must appear verbatim in the text you return, or they render',
+  '  as plain text and the highlight is lost.',
+  '- No markdown, no surrounding quotes, no emoji the original did not have.',
+  '',
+  'Field budgets:',
+  describeBudgets({ includeTitle: false }),
+].join('\n');
+
+/**
+ * Rewrite one slide. Returns `{ ok: true, slide, changed, notes, usage }`.
+ *
+ * Deliberately narrower than generateDeck(): no validation retry loop. One slide
+ * is cheap to lose and the user is sitting in front of the button — clicking it
+ * again is a better answer than spending a second call, and every field comes
+ * back clamped anyway, so there is nothing for a retry to fix.
+ */
+export async function rewriteSlide(input = {}) {
+  const notes = [];
+  const slide = input.slide;
+  if (!slide || typeof slide !== 'object' || Array.isArray(slide)) {
+    return { ok: false, kind: 'bad_deck', message: 'No slide to rewrite.', notes };
+  }
+  const preset = REWRITE_PRESETS.find((p) => p.id === input.preset);
+  const steer = String(input.instruction ?? '').replace(/\s+/g, ' ').trim().slice(0, 400);
+  if (!preset && !steer) {
+    return { ok: false, kind: 'no_input', message: 'Pick a preset or type an instruction.', notes };
+  }
+
+  // Deck-level context so the rewrite lands in the same voice as its neighbours.
+  const where = [
+    input.title ? `Deck title: ${input.title}` : null,
+    input.narrative_type ? `Narrative: ${input.narrative_type}` : null,
+    input.platform ? `Platform: ${input.platform}` : null,
+    input.index != null && input.total
+      ? `This is slide ${Number(input.index) + 1} of ${input.total}, a ${slide.type ?? 'body'} slide.`
+      : `This is a ${slide.type ?? 'body'} slide.`,
+  ].filter(Boolean);
+
+  const userTurn = [
+    ...where,
+    '',
+    'Current slide:',
+    JSON.stringify(pickRewritable(slide), null, 2),
+    '',
+    'What to change:',
+    [preset?.instruction, steer].filter(Boolean).join('\n'),
+  ].join('\n');
+
+  const call = await callGemini({
+    system: REWRITE_SYSTEM,
+    contents: [{ role: 'user', parts: [{ text: userTurn }] }],
+    model: input.model || MODEL,
+    format: slideResponseSchema,
+    attempts: 2,
+  });
+  if (!call.ok) return { ok: false, kind: call.kind, message: call.message, notes };
+
+  let parsed;
+  try {
+    parsed = JSON.parse(unfence(call.text));
+  } catch (err) {
+    return {
+      ok: false,
+      kind: 'parse_error',
+      message: `The rewrite was not parseable JSON (${err.message}).`,
+      notes,
+    };
+  }
+  // Tolerate an unwrapped slide: structured output makes `{ slide: {...} }` the
+  // norm, but a model that returns the slide bare is right about the content.
+  const next = parsed?.slide ?? parsed;
+  if (!next || typeof next !== 'object' || Array.isArray(next)) {
+    return { ok: false, kind: 'parse_error', message: 'The rewrite came back empty.', notes };
+  }
+
+  const merged = mergeRewrite(slide, next, notes);
+  const changed = REWRITABLE_KEYS.some(
+    (k) => JSON.stringify(merged[k]) !== JSON.stringify(slide[k])
+  );
+  if (!changed) notes.push('the model returned this slide unchanged');
+  return { ok: true, slide: merged, changed, notes, usage: call.usage ?? null };
+}
+
 // CLI: node src/generate.js "text or @file" [--slides 7] [--type how-to] [--style mono-terminal] [-o deck.json]
+
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   const argv = process.argv.slice(2);
   const flag = (name, fallback) => {

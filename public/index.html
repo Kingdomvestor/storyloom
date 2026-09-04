@@ -28,12 +28,16 @@
       <i class="dot"></i><span id="modelName">…</span>
     </span>
     <span class="pill pill-quiet" title="Template-first carousels never call the model">templates · free</span>
-    <button class="pill acct" id="dashLink" title="My decks" hidden>My decks</button>
-    <span class="pill credits acct" id="creditsPill" title="AI generations left" hidden>
+    <!-- No `hidden` attribute on .acct: Bootstrap's reboot ships
+         [hidden]{display:none!important}, which no author rule can undo. The
+         pre-auth state is `.acct { display: none }` in app.css, flipped by
+         html[data-auth="in"]. -->
+    <button class="pill acct" id="dashLink" title="My decks">My decks</button>
+    <span class="pill credits acct" id="creditsPill" title="AI generations left">
       <b id="creditsNum">–</b>&nbsp;credits
     </span>
-    <span class="acct email" id="userEmail" hidden></span>
-    <button class="linkbtn acct" id="logoutBtn" hidden>Sign out</button>
+    <span class="acct email" id="userEmail"></span>
+    <button class="linkbtn acct" id="logoutBtn">Sign out</button>
   </div>
 </header>
 
@@ -156,8 +160,23 @@
     <div class="editbar-right">
       <span class="badge-source" id="deckSource"></span>
       <span class="vstate" id="vstate" title="Live schema + lint check"></span>
+      <span class="autostate" id="autostate" title="Autosave"></span>
+      <div class="undogroup">
+        <button class="btn-ghost sm icon" id="undoBtn" title="Undo (Ctrl+Z)" disabled>&#8630;</button>
+        <button class="btn-ghost sm icon" id="redoBtn" title="Redo (Ctrl+Shift+Z)" disabled>&#8631;</button>
+      </div>
       <button class="btn-ghost sm" id="saveBtn">Save</button>
-      <button class="btn-go sm" id="renderBtn"><span class="label">Render PNGs</span></button>
+      <button class="btn-ghost sm" id="renderBtn"><span class="label">Render PNGs</span></button>
+      <div class="menu" id="exportMenu">
+        <button class="btn-go sm" id="exportBtn" aria-haspopup="true" aria-expanded="false">
+          <span class="label">Download</span> <span class="caret">&#9662;</span>
+        </button>
+        <div class="menu-pop" id="exportPop" role="menu" hidden>
+          <button role="menuitem" data-format="zip">All slides &middot; ZIP</button>
+          <button role="menuitem" data-format="pdf">All slides &middot; PDF</button>
+          <button role="menuitem" data-format="png">This slide &middot; PNG</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -182,11 +201,13 @@
         <button class="on" data-tab="content" role="tab" aria-selected="true" aria-controls="tabContent">Content</button>
         <button data-tab="style" role="tab" aria-selected="false" aria-controls="tabStyle">Style</button>
         <button data-tab="brand" role="tab" aria-selected="false" aria-controls="tabBrand">Brand</button>
+        <button data-tab="ai" role="tab" aria-selected="false" aria-controls="tabAi">AI</button>
       </div>
 
       <div class="panel-body" data-tab="content" id="tabContent" role="tabpanel"></div>
       <div class="panel-body" data-tab="style" id="tabStyle" role="tabpanel" hidden></div>
       <div class="panel-body" data-tab="brand" id="tabBrand" role="tabpanel" hidden></div>
+      <div class="panel-body" data-tab="ai" id="tabAi" role="tabpanel" hidden></div>
     </aside>
   </div>
 </main>
@@ -198,7 +219,7 @@
     <h3 id="sheetTitle">Rendered</h3>
     <p class="sheet-sub" id="sheetSub"></p>
     <div class="shots" id="shots"></div>
-    <p class="sheet-foot">Written to disk. Download, PDF and watermark enforcement are Week B — this is the Week&nbsp;A proof that the browser and Puppeteer render the same file.</p>
+    <p class="sheet-foot">Written to disk on the server — this is the proof that the browser preview and Puppeteer render the same file. <b>Download</b> in the toolbar gives you the ZIP, the PDF or a single slide.</p>
   </div>
 </div>
 

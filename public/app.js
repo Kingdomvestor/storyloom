@@ -43,11 +43,15 @@ const state = {
   meta: null,
   user: null,
   credits: null,
+  plan: 'free',
   deckId: null,
   deck: null,
   index: 0,
   warnings: [],
   errors: [],
+  dirty: false,
+  defaultBrand: null,   // the user's default footer, applied to new decks
+  brands: null,         // the brand library, loaded when the Brand tab first opens
   compose: { src: 'text', slides: 'auto', narrative: 'listicle', style: 'signature-african', platform: 'linkedin' },
 };
 
@@ -67,6 +71,13 @@ async function api(path, body, opts = {}) {
       if (token) headers.authorization = `Bearer ${token}`;
     }
     const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    // `raw` is for the one response that isn't JSON: /api/export sends a file.
+    // It still needs the Bearer token and the same one-shot refresh on 401, and
+    // that logic should live in exactly one place.
+    if (opts.raw) {
+      if (res.status === 401 && sb && attempt === 0) continue;
+      return res;
+    }
     let data;
     try {
       data = await res.json();
@@ -191,6 +202,8 @@ async function loadDashboard() {
     return;
   }
   state.credits = r.credits;
+  state.plan = r.plan ?? 'free';
+  state.defaultBrand = r.defaultBrand ?? null;
   renderCredits();
   const grid = $('#deckGrid');
   grid.innerHTML = '';
@@ -245,18 +258,145 @@ function wireDashboard() {
   };
 }
 
-async function saveDeck() {
-  const btn = $('#saveBtn');
-  btn.disabled = true; btn.textContent = 'Saving…';
+/** The one write path to the deck store, shared by the Save button and autosave. */
+async function persist() {
   const payload = { title: state.deck.title || 'Untitled', deck: state.deck };
   const r = state.deckId
     ? await api('/api/decks/' + state.deckId, payload, { method: 'PUT' })
     : await api('/api/decks', payload);
+  if (r.ok) {
+    state.deckId = r.id ?? state.deckId;
+    state.dirty = false;
+  }
+  return r;
+}
+
+async function saveDeck() {
+  const btn = $('#saveBtn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  const r = await persist();
   btn.disabled = false; btn.textContent = 'Save';
-  if (!r.ok) { $('#stageNote').textContent = `Save failed — ${r.message}`; return; }
-  state.deckId = r.id ?? state.deckId;
+  if (!r.ok) {
+    $('#stageNote').textContent = `Save failed — ${r.message}`;
+    setAutoState('failed', 'Save failed');
+    return;
+  }
   btn.textContent = 'Saved ✓';
+  setAutoState('saved');
   setTimeout(() => (btn.textContent = 'Save'), 1500);
+}
+
+// --------------------------------------------------------- autosave + history
+
+const AUTOSAVE_MS = 2000;   // after the last edit, not on a fixed clock
+const COALESCE_MS = 900;    // edits closer together than this are one undo step
+const HISTORY_MAX = 60;
+
+function setAutoState(kind, text) {
+  const el = $('#autostate');
+  if (!el) return;
+  el.className = `autostate ${kind}`;
+  const clock = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  el.textContent = text ?? (kind === 'saved' ? `Saved ${clock}` : '');
+}
+
+let autosaveTimer = null;
+
+/**
+ * Every deck mutation lands here (see revalidate). Two things follow from an
+ * edit: it belongs in the undo stack, and it should end up on the server without
+ * anyone pressing Save. The dirty flag is what keeps template *browsing* from
+ * creating rows — nothing is written until the user actually changes something.
+ */
+function markDirty() {
+  if (!state.deck) return;
+  state.dirty = true;
+  if (!state.user) return;   // degraded / signed out: nowhere to autosave to
+  setAutoState('pending', 'Unsaved…');
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(autosave, AUTOSAVE_MS);
+}
+
+async function autosave() {
+  if (!state.dirty || !state.user || !state.deck) return;
+  // A deck with schema errors would be rejected by the server's validator, so
+  // there is no point spending the round trip. The next edit reschedules this,
+  // and fixing the error *is* an edit.
+  if (state.errors.length) return setAutoState('pending', 'Fix errors to save');
+  setAutoState('pending', 'Saving…');
+  const r = await persist();
+  setAutoState(r.ok ? 'saved' : 'failed', r.ok ? undefined : 'Autosave failed');
+}
+
+/**
+ * Undo/redo over whole-deck JSON snapshots.
+ *
+ * Snapshotting the entire deck rather than diffing it is the right trade at this
+ * size — a deck is ~6KB, and a patch-based stack would have to know about every
+ * field the editor can touch, which is precisely the coupling that rots.
+ *
+ * `base` is the state as it stands now; `past` holds what came before it. A burst
+ * of keystrokes collapses into one entry, so Ctrl+Z undoes a word, not a letter.
+ */
+const history = { past: [], future: [], base: null, at: 0 };
+const snapshot = () => JSON.stringify(state.deck);
+
+function resetHistory() {
+  history.past.length = 0;
+  history.future.length = 0;
+  history.base = state.deck ? snapshot() : null;
+  history.at = 0;
+  paintHistory();
+}
+
+function pushHistory() {
+  if (!state.deck) return;
+  const current = snapshot();
+  if (current === history.base) return;   // a keystroke that changed nothing
+  const now = Date.now();
+  if (now - history.at > COALESCE_MS) {
+    history.past.push(history.base);
+    if (history.past.length > HISTORY_MAX) history.past.shift();
+  }
+  history.base = current;
+  history.at = now;
+  history.future.length = 0;              // a new edit abandons the redo branch
+  paintHistory();
+}
+
+function paintHistory() {
+  const undoBtn = $('#undoBtn');
+  const redoBtn = $('#redoBtn');
+  if (!undoBtn) return;
+  undoBtn.disabled = history.past.length === 0;
+  redoBtn.disabled = history.future.length === 0;
+}
+
+function restoreSnapshot(json) {
+  state.deck = JSON.parse(json);
+  state.index = Math.min(state.index, state.deck.slides.length - 1);
+  buildRail();
+  buildStyleTab();
+  buildBrandTab();
+  buildAiTab();
+  selectSlide(state.index);
+  markDirty();      // an undone deck is still a deck the server hasn't got
+  runValidate();    // not revalidate(): restoring must not push a history entry
+  paintHistory();
+}
+
+function undo() {
+  if (!history.past.length) return;
+  history.future.push(history.base);
+  history.base = history.past.pop();
+  restoreSnapshot(history.base);
+}
+
+function redo() {
+  if (!history.future.length) return;
+  history.past.push(history.base);
+  history.base = history.future.pop();
+  restoreSnapshot(history.base);
 }
 
 // ------------------------------------------------------------------- frames
@@ -488,7 +628,9 @@ async function generate() {
     narrative_type: state.compose.narrative,
     style_id: state.compose.style,
     platform: state.compose.platform,
-    brand: brandFromInputs(),
+    // Your saved default, if you have one. A deck that comes back brandless still
+    // gets it applied in openEditor — this is so the model can see the handle.
+    brand: state.defaultBrand ?? undefined,
     instructions: $('#instructions').value.trim() || undefined,
   };
   if (fromUrl) payload.url = $('#sourceUrl').value.trim();
@@ -593,7 +735,12 @@ function openEditor(deck, info = {}) {
   state.deck = deck;
   state.index = 0;
   state.deckId = info.deckId ?? null;
+  state.dirty = false;
   document.documentElement.dataset.view = 'editor';
+
+  // A new deck inherits the default brand; a saved one never does. Re-applying it
+  // on open would resurrect a footer the user deliberately cleared three edits ago.
+  if (!info.deckId && !deck.brand && state.defaultBrand) deck.brand = { ...state.defaultBrand };
 
   $('#deckTitle').value = deck.title ?? '';
   const src = $('#deckSource');
@@ -603,14 +750,17 @@ function openEditor(deck, info = {}) {
   const note = $('#stageNote');
   note.textContent = info.degraded
     ? 'This deck needed repairing — some text was truncated to fit. Worth a read before you post it.'
-    : '';
+    : 'Click any text on the slide to edit it in place.';
 
   buildRail();
   buildStyleTab();
   buildBrandTab();
+  buildAiTab();
   selectSlide(0);
   fitStage();
-  revalidate();
+  resetHistory();
+  setAutoState('', '');
+  revalidate({ passive: true });   // opening a deck is not an edit of it
 }
 
 function wireEditor() {
@@ -623,8 +773,30 @@ function wireEditor() {
   $('#nextSlide').onclick = () => selectSlide(state.index + 1);
   $('#saveBtn').onclick = saveDeck;
   $('#renderBtn').onclick = renderPngs;
+  $('#undoBtn').onclick = undo;
+  $('#redoBtn').onclick = redo;
   $('#sheetX').onclick = () => ($('#sheet').hidden = true);
   $('#sheet').onclick = (e) => { if (e.target === $('#sheet')) $('#sheet').hidden = true; };
+  wireCanvas($('#preview'));
+
+  // Download menu. Closing on any outside click is wired on document, not on a
+  // backdrop element: a backdrop would swallow the first click on everything else.
+  const pop = $('#exportPop');
+  $('#exportBtn').onclick = (e) => {
+    e.stopPropagation();
+    const open = pop.hidden;
+    pop.hidden = !open;
+    $('#exportBtn').setAttribute('aria-expanded', String(open));
+  };
+  $$('#exportPop button').forEach((b) => {
+    b.onclick = () => exportDeck(b.dataset.format);
+  });
+  document.addEventListener('click', (e) => {
+    if (!pop.hidden && !$('#exportMenu').contains(e.target)) {
+      pop.hidden = true;
+      $('#exportBtn').setAttribute('aria-expanded', 'false');
+    }
+  });
 
   $('#deckTitle').oninput = (e) => {
     state.deck.title = e.target.value;
@@ -642,7 +814,20 @@ function wireEditor() {
 
   document.addEventListener('keydown', (e) => {
     if (document.documentElement.dataset.view !== 'editor') return;
-    if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+
+    // Ctrl+Z is intercepted even inside a text field. The browser's own per-field
+    // undo and the deck-level stack would otherwise disagree about what the last
+    // change was, and the user would get whichever one happened to have focus.
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && (e.key === 'z' || e.key === 'Z')) {
+      e.preventDefault();
+      if (e.shiftKey) redo(); else undo();
+      return;
+    }
+    if (mod && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
+    if (mod && (e.key === 's' || e.key === 'S')) { e.preventDefault(); saveDeck(); return; }
+
+    if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable) return;
     if (e.key === 'ArrowLeft') selectSlide(state.index - 1);
     if (e.key === 'ArrowRight') selectSlide(state.index + 1);
   });
@@ -1004,6 +1189,167 @@ function commitStructural() {
   revalidate();
 }
 
+// ------------------------------------------------ click-to-edit on the canvas
+/**
+ * The preview iframe is same-origin (it is served from /templates/carousel.html),
+ * so the editor can reach in and make one block editable where it sits. Every
+ * text block already renders with `data-field` naming the deck field it came
+ * from, so this needs no second copy of the layout and no coordinate maths.
+ *
+ * Nothing is added to the template file: the affordance CSS is injected from
+ * here at runtime, so Puppeteer — which loads that same file from disk — never
+ * sees it. `color-mix` on currentColor means the outline reads on the bone skin
+ * and the near-black one without either being told which is which.
+ */
+const CANVAS_CSS = `
+  [data-field] { cursor: text; }
+  [data-field]:hover, [data-field][data-editing] {
+    outline: 2px dashed color-mix(in srgb, currentColor 34%, transparent);
+    outline-offset: 12px; border-radius: 4px;
+  }
+  [data-field][data-editing] { outline-style: solid; }
+`;
+
+/** field path → the schema cap that governs it, from /api/meta. */
+function capForField(path) {
+  const caps = state.meta.caps;
+  if (path.startsWith('bullets.')) return caps.bullet;
+  if (path === 'cta.label') return caps.cta;
+  return caps[path] ?? 200;
+}
+
+function readCanvasField(path) {
+  const s = state.deck.slides[state.index];
+  if (path.startsWith('bullets.')) return s.bullets?.[Number(path.slice(8))] ?? '';
+  if (path === 'cta.label') return s.cta?.label ?? '';
+  return s[path] ?? '';
+}
+
+/**
+ * Write a canvas edit back. Empty is meaningful and matches the panel: clearing
+ * an optional field deletes it, clearing a bullet removes the row, and clearing
+ * the heading leaves it empty for the validator to complain about rather than
+ * silently dropping a required field.
+ */
+function writeCanvasField(path, text) {
+  const s = state.deck.slides[state.index];
+  if (path.startsWith('bullets.')) {
+    const i = Number(path.slice(8));
+    if (!Array.isArray(s.bullets) || i >= s.bullets.length) return false;
+    if (text) s.bullets[i] = text;
+    else {
+      s.bullets.splice(i, 1);
+      if (!s.bullets.length) delete s.bullets;
+    }
+    return true;
+  }
+  if (path === 'cta.label') {
+    if (!s.cta) return false;
+    if (text) s.cta.label = text;
+    else return false;                 // an unlabelled pill is not a thing; keep it
+    return true;
+  }
+  if (!TEXT_FIELD_KEYS.has(path)) return false;
+  if (text || path === 'heading') s[path] = text;
+  else delete s[path];
+  return true;
+}
+
+const TEXT_FIELD_KEYS = new Set(TEXT_FIELDS.map((f) => f.key));
+
+/**
+ * The highlight spans inside the block are left alone while typing: the commit
+ * reads textContent, and the re-render rebuilds them from `highlight_words`
+ * anyway, so any DOM the editing left behind is discarded a frame later. Not
+ * rewriting the content up front is also what lets the caret land where the
+ * click did instead of jumping to the end.
+ */
+function startCanvasEdit(el, path, point) {
+  const doc = el.ownerDocument;
+  const cap = capForField(path);
+  const original = readCanvasField(path);
+  let cancelled = false;
+
+  el.dataset.editing = '1';
+  el.spellcheck = false;
+  el.contentEditable = 'plaintext-only';
+  if (el.contentEditable !== 'plaintext-only') el.contentEditable = 'true'; // older Chrome
+  el.focus({ preventScroll: true });
+
+  const caret = point && doc.caretRangeFromPoint?.(point.x, point.y);
+  const sel = doc.getSelection();
+  if (sel) {
+    sel.removeAllRanges();
+    if (caret) sel.addRange(caret);
+    else {
+      const r = doc.createRange();
+      r.selectNodeContents(el);
+      r.collapse(false);
+      sel.addRange(r);
+    }
+  }
+
+  // The panel's inputs get maxLength; this is the same rule, enforced at the one
+  // point where text arrives — typing, pasting or dropping.
+  const onBefore = (e) => {
+    const incoming = e.data ?? e.dataTransfer?.getData('text/plain') ?? '';
+    if (!incoming) return;
+    const s2 = doc.getSelection();
+    const replacing = s2 && !s2.isCollapsed ? String(s2).length : 0;
+    if (el.textContent.length - replacing + incoming.length > cap) e.preventDefault();
+  };
+
+  const onKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancelled = true; el.blur(); }
+  };
+
+  const onBlur = () => {
+    el.removeEventListener('beforeinput', onBefore);
+    el.removeEventListener('keydown', onKey);
+    el.removeEventListener('blur', onBlur);
+    delete el.dataset.editing;
+    el.contentEditable = 'inherit';
+    finishCanvasEdit(path, cancelled ? original : el.textContent, original);
+  };
+
+  el.addEventListener('beforeinput', onBefore);
+  el.addEventListener('keydown', onKey);
+  el.addEventListener('blur', onBlur);
+}
+
+function finishCanvasEdit(path, raw, original) {
+  // Newlines can only arrive by paste (Enter commits), and no deck field renders
+  // one — fold them into spaces rather than storing text the canvas won't show.
+  const text = String(raw).replace(/\s*\n+\s*/g, ' ').trim().slice(0, capForField(path));
+  if (text === original) return refreshPreview();   // repaints the highlight spans
+  if (!writeCanvasField(path, text)) return refreshPreview();
+  buildContentTab();
+  show($('#preview'), state.deck, state.index);     // now, not debounced
+  refreshThumb(state.index);
+  revalidate({ discrete: true });
+}
+
+/** Attach once per iframe document; re-attaches if the frame ever reloads. */
+function wireCanvas(iframe) {
+  const attach = () => {
+    const doc = iframe.contentDocument;
+    if (!doc || doc.__storyloomEdit) return;
+    doc.__storyloomEdit = true;
+    const style = doc.createElement('style');
+    style.textContent = CANVAS_CSS;
+    doc.head.appendChild(style);
+    doc.addEventListener('mousedown', (e) => {
+      const el = e.target.closest?.('[data-field]');
+      if (!el || el.dataset.editing) return;
+      e.preventDefault();            // no drag-select of the whole card
+      startCanvasEdit(el, el.dataset.field, { x: e.clientX, y: e.clientY });
+    });
+  };
+  iframe.addEventListener('load', attach);
+  attach();
+}
+
 /**
  * Tag editor for highlight_words.
  *
@@ -1136,7 +1482,10 @@ function buildStyleTab() {
     (v) => { state.deck.platform = v; revalidate(); },
     (p) => (p === 'linkedin' ? 'LinkedIn' : 'Instagram'));
 
-  host.appendChild(toggleRow('Watermark', 'Free tier shows it. Enforced server-side at export — Week B.',
+  host.appendChild(toggleRow('Watermark',
+    state.plan === 'pro'
+      ? 'Yours to turn off — you are on Pro.'
+      : 'On for free decks, and the export re-adds it if you switch it off here.',
     state.deck.watermark !== false, async (on) => {
       state.deck.watermark = on;
       await show($('#preview'), state.deck, state.index);
@@ -1182,13 +1531,6 @@ function toggleRow(title, sub, on, onChange) {
 }
 
 // --------------------------------------------------------------- brand tab
-function brandFromInputs() {
-  const name = $('#b-name')?.value.trim();
-  const handle = $('#b-handle')?.value.trim();
-  if (!name && !handle) return undefined;
-  return { ...(name ? { name } : {}), ...(handle ? { handle } : {}) };
-}
-
 function buildBrandTab() {
   const host = $('#tabBrand');
   const caps = state.meta.caps;
@@ -1225,11 +1567,269 @@ function buildBrandTab() {
     host.appendChild(wrap);
   }
 
+  const lib = document.createElement('div');
+  lib.className = 'brandlib';
+  host.appendChild(lib);
+  renderBrandLibrary(lib);
+
   const why = document.createElement('p');
   why.className = 'why';
-  why.textContent =
-    'Week B moves this to a brands table so it is set once and reused. Today it lives on the deck.';
+  why.textContent = state.user
+    ? 'The deck always carries its own footer — that is what renders. A saved brand is where you copy one from, so the next deck starts with it already filled in.'
+    : 'Saved brands need an account. The footer above still renders; it just lives on this deck only.';
   host.appendChild(why);
+}
+
+/** The brand library: saved footers, and the two ways to add one. */
+async function renderBrandLibrary(host) {
+  if (!state.user) return;
+  host.innerHTML = '<div class="subhead">Saved brands</div><p class="why">Loading…</p>';
+
+  const rows = await loadBrands();
+  host.innerHTML = '';
+  const head = document.createElement('div');
+  head.className = 'subhead';
+  head.textContent = 'Saved brands';
+  host.appendChild(head);
+
+  if (!rows.length) {
+    const none = document.createElement('p');
+    none.className = 'why';
+    none.textContent = 'None yet.';
+    host.appendChild(none);
+  }
+  for (const row of rows) host.appendChild(brandRow(row));
+
+  const actions = document.createElement('div');
+  actions.className = 'brandactions';
+  actions.append(
+    linkButton('Save footer as a brand', () => saveCurrentBrand(false)),
+    linkButton('Save as my default', () => saveCurrentBrand(true))
+  );
+  host.appendChild(actions);
+}
+
+function linkButton(text, onClick) {
+  const b = document.createElement('button');
+  b.className = 'linkbtn';
+  b.textContent = text;
+  b.onclick = onClick;
+  return b;
+}
+
+function brandRow(b) {
+  const row = document.createElement('div');
+  row.className = 'brandrow' + (b.is_default ? ' isdefault' : '');
+
+  const who = document.createElement('div');
+  who.className = 'who';
+  const name = document.createElement('b');
+  name.textContent = b.name || b.handle || 'Untitled';
+  const handle = document.createElement('span');
+  handle.textContent = b.name && b.handle ? b.handle : '';
+  who.append(name, handle);
+
+  const acts = document.createElement('div');
+  acts.className = 'acts';
+  acts.append(
+    linkButton('Apply', () => applyBrandRow(b)),
+    b.is_default
+      ? Object.assign(document.createElement('span'), { className: 'defaultflag', textContent: 'Default' })
+      : linkButton('Make default', () => setDefaultBrand(b)),
+    linkButton('Delete', () => deleteBrand(b))
+  );
+
+  row.append(who, acts);
+  return row;
+}
+
+async function loadBrands({ force = false } = {}) {
+  if (!state.user) return [];
+  if (state.brands && !force) return state.brands;
+  const r = await api('/api/brands');
+  state.brands = r.ok ? r.brands : [];
+  return state.brands;
+}
+
+/**
+ * A stored brand row → the deck's `brand` field: drop the storage columns and
+ * every empty value, because `logo_url: null` on a deck fails the schema.
+ * Mirrors `toDeckBrand()` in src/brands.js.
+ */
+function brandRowToDeckBrand(row) {
+  const brand = {};
+  if (row?.name) brand.name = row.name;
+  if (row?.handle) brand.handle = row.handle;
+  if (row?.logo_url) brand.logo_url = row.logo_url;
+  return Object.keys(brand).length ? brand : null;
+}
+
+/** Copy a saved brand onto the deck. The deck's own field is what renders. */
+function applyBrandRow(b) {
+  const next = brandRowToDeckBrand(b);
+  if (next) state.deck.brand = next;
+  else delete state.deck.brand;
+  buildBrandTab();
+  refreshPreview();
+  refreshThumb(state.index);
+  revalidate();
+}
+
+/** The footer fields as a brand row, or null when there is nothing to save. */
+function brandFromInputs() {
+  const brand = state.deck.brand ?? {};
+  const name = (brand.name ?? '').trim();
+  const handle = (brand.handle ?? '').trim();
+  if (!name && !handle) return null;
+  return { name, handle, logo_url: brand.logo_url ?? null };
+}
+
+async function saveCurrentBrand(asDefault) {
+  const body = brandFromInputs();
+  if (!body) return ($('#stageNote').textContent = 'Fill in a name or handle first.');
+  const r = await api('/api/brands', { ...body, is_default: asDefault });
+  if (!r.ok) return ($('#stageNote').textContent = `Could not save the brand — ${r.message}`);
+  state.brands = null;                                   // the list changed; refetch
+  if (asDefault) state.defaultBrand = brandRowToDeckBrand(body);
+  buildBrandTab();
+}
+
+// PUT normalises the whole row server-side, so send every column — omitting
+// logo_url here would quietly clear it while only meaning to move the star.
+async function setDefaultBrand(b) {
+  const body = { name: b.name, handle: b.handle, logo_url: b.logo_url ?? null, is_default: true };
+  const r = await api(`/api/brands/${b.id}`, body, { method: 'PUT' });
+  if (!r.ok) return ($('#stageNote').textContent = `Could not set the default — ${r.message}`);
+  state.brands = null;
+  state.defaultBrand = brandRowToDeckBrand(b);
+  buildBrandTab();
+}
+
+async function deleteBrand(b) {
+  if (!confirm(`Delete the brand "${b.name || b.handle}"?`)) return;
+  const r = await api(`/api/brands/${b.id}`, null, { method: 'DELETE' });
+  if (!r.ok) return ($('#stageNote').textContent = `Could not delete the brand — ${r.message}`);
+  state.brands = null;
+  if (b.is_default) state.defaultBrand = null;
+  buildBrandTab();
+}
+
+// --------------------------------------------------------------------- AI tab
+/**
+ * One slide, rewritten. Deliberately not "regenerate the deck": the deck's shape
+ * was the expensive decision and it is usually fine — it is a single slide that
+ * lands flat. A preset click runs immediately (the steer box is optional extra
+ * direction), because making the user pick a preset *and* press a button is one
+ * click of ceremony for no information.
+ */
+function buildAiTab() {
+  const host = $('#tabAi');
+  host.innerHTML = '';
+  const presets = state.meta.rewritePresets ?? [];
+
+  const head = document.createElement('div');
+  head.className = 'subhead';
+  head.textContent = 'Rewrite this slide';
+  host.appendChild(head);
+
+  if (!state.meta.hasApiKey) {
+    const off = document.createElement('p');
+    off.className = 'why';
+    off.textContent = 'No model key on the server, so rewriting is off. Everything else in the editor works.';
+    host.appendChild(off);
+    return;
+  }
+
+  const row = document.createElement('div');
+  row.className = 'aipresets';
+  for (const p of presets) {
+    const b = document.createElement('button');
+    b.className = 'btn-ghost sm';
+    b.dataset.preset = p.id;
+    b.textContent = p.label;
+    b.onclick = () => runRewrite(p.id);
+    row.appendChild(b);
+  }
+  host.appendChild(row);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'f';
+  const lab = document.createElement('label');
+  lab.setAttribute('for', 'aiSteer');
+  lab.textContent = 'Or say what to change';
+  wrap.appendChild(lab);
+  const box = document.createElement('textarea');
+  box.id = 'aiSteer';
+  box.rows = 2;
+  box.maxLength = 400;
+  box.placeholder = 'e.g. drop the metaphor, name the tool';
+  wrap.appendChild(box);
+  host.appendChild(wrap);
+
+  const go = document.createElement('button');
+  go.className = 'btn-go';
+  go.id = 'aiRunBtn';
+  go.innerHTML = '<span class="label">Rewrite</span> <span class="cost">1 credit</span>';
+  go.onclick = () => runRewrite(null);
+  host.appendChild(go);
+
+  const note = document.createElement('p');
+  note.className = 'ainote';
+  note.id = 'aiNote';
+  host.appendChild(note);
+
+  const why = document.createElement('p');
+  why.className = 'why';
+  why.textContent = 'Your words are kept for anything the model leaves out, and Ctrl+Z puts the old slide back. A rewrite that changes nothing is refunded.';
+  host.appendChild(why);
+}
+
+function aiBusy(on, label) {
+  for (const b of $$('#tabAi button')) b.disabled = on;
+  const note = $('#aiNote');
+  if (note && label) { note.textContent = label; note.className = 'ainote'; }
+}
+
+async function runRewrite(presetId) {
+  const slide = state.deck.slides[state.index];
+  const instruction = ($('#aiSteer')?.value ?? '').trim();
+  if (!presetId && !instruction) {
+    const note = $('#aiNote');
+    note.className = 'ainote bad';
+    note.textContent = 'Pick one of the presets, or type what to change.';
+    return;
+  }
+  aiBusy(true, 'Rewriting…');
+  const r = await api('/api/rewrite', {
+    slide,
+    preset: presetId,
+    instruction,
+    index: state.index,
+    total: state.deck.slides.length,
+    title: state.deck.title,
+    narrative_type: state.deck.narrative_type,
+    platform: state.deck.platform,
+  });
+  aiBusy(false);
+  const note = $('#aiNote');
+
+  if (typeof r.credits === 'number') { state.credits = r.credits; renderCredits(); }
+  if (!r.ok) {
+    note.className = 'ainote bad';
+    note.textContent = [r.message, ...(r.notes ?? [])].join(' · ');
+    return;
+  }
+
+  state.deck.slides[state.index] = r.slide;
+  buildContentTab();
+  refreshPreview();
+  refreshThumb(state.index);
+  revalidate({ discrete: true });     // one undo step puts the old slide back
+
+  note.className = `ainote ${r.changed ? 'good' : ''}`;
+  note.textContent = r.changed
+    ? ['Rewritten — Ctrl+Z to go back.', ...(r.notes ?? [])].join(' · ')
+    : (r.notes ?? ['The model returned it unchanged.']).join(' · ');
 }
 
 // ------------------------------------------------------------- validation
@@ -1238,7 +1838,7 @@ function buildBrandTab() {
  * schema. Re-implementing either in the browser would be two things to keep in
  * agreement, and they would stop agreeing.
  */
-const revalidate = debounce(async () => {
+const runValidate = debounce(async () => {
   if (!state.deck) return;
   const r = await api('/api/validate', { deck: state.deck });
   if (!r.ok) return;
@@ -1259,6 +1859,26 @@ const revalidate = debounce(async () => {
   $$('.warnlist', host).forEach((l) => l.remove());
   renderWarnings(host);
 }, 450);
+
+/**
+ * Every deck mutation in the editor already called revalidate(), which makes this
+ * the one honest choke point for "the deck changed" — so undo and autosave hook
+ * here rather than being threaded through thirteen call sites that would each be
+ * one more place to forget. Passive callers (opening a deck, restoring a
+ * snapshot) pass `{ passive: true }` and get validation without the bookkeeping.
+ *
+ * `discrete: true` is for a change that replaces a block of text wholesale — an
+ * AI rewrite, a bullet dropped. Those must not be coalesced into the keystroke
+ * the user happened to type a moment earlier, or one Ctrl+Z would undo both.
+ */
+function revalidate({ passive = false, discrete = false } = {}) {
+  if (!passive) {
+    if (discrete) history.at = 0;   // force pushHistory past its coalesce window
+    pushHistory();
+    markDirty();
+  }
+  runValidate();
+}
 
 // ----------------------------------------------------------------- rendering
 async function renderPngs() {
@@ -1293,6 +1913,60 @@ async function renderPngs() {
     shots.appendChild(a);
   }
   $('#sheet').hidden = false;
+}
+
+// ------------------------------------------------------------------- download
+/**
+ * Fetch the file, then click a synthetic <a download>.
+ *
+ * A plain `<a href="/api/export">` would be simpler and cannot work: a link
+ * cannot carry an Authorization header, so the request would arrive anonymous and
+ * come back 401. So the bytes come through fetch() — which also means the
+ * watermark note below is readable, since we get the headers.
+ */
+async function exportDeck(format) {
+  $('#exportPop').hidden = true;
+  $('#exportBtn').setAttribute('aria-expanded', 'false');
+  const btn = $('#exportBtn');
+  const label = $('.label', btn);
+  const was = label.textContent;
+  btn.disabled = true;
+  label.textContent = format === 'png' ? 'Rendering…' : 'Rendering all…';
+  $('#stageNote').textContent = '';
+
+  try {
+    const res = await api(
+      '/api/export',
+      { deck: state.deck, format, ...(format === 'png' ? { index: state.index } : {}) },
+      { raw: true }
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: `HTTP ${res.status}` }));
+      $('#stageNote').textContent = `Download failed — ${err.message}`;
+      return;
+    }
+
+    const disposition = res.headers.get('content-disposition') ?? '';
+    const name = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `carousel.${format}`;
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoked on a timer, not immediately: Chrome needs the URL to still resolve
+    // when it starts the download, which happens after the click returns.
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    $('#stageNote').textContent =
+      res.headers.get('x-storyloom-watermark') === 'forced'
+        ? `${name} — exported with the watermark, which is a Pro feature to remove.`
+        : `${name} downloaded.`;
+  } finally {
+    btn.disabled = false;
+    label.textContent = was;
+  }
 }
 
 boot();
