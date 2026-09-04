@@ -33,7 +33,7 @@ gallery, drag-to-reorder, add/remove slides, undo/redo, autosave, download
 (ZIP/PDF/PNG), server-side watermark enforcement, the brand library, the AI
 rewrite tab, click-to-edit on the canvas.
 **Not built yet:** Week C — loading/error/empty states, mobile, landing page,
-README + demo video, deploy. Plus tests for zip/pdf/export/rewrite.
+README + demo video, deploy.
 
 Do not build a not-built-yet item without being asked.
 
