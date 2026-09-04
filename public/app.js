@@ -688,6 +688,36 @@ function buildRail() {
     scaleFrame(thumb, $('iframe', thumb), width);
     show($('iframe', thumb), state.deck, i);
   });
+
+  buildRailFoot(rail);
+}
+
+/**
+ * Rail footer: add, remove, and the count that explains why either disables.
+ * Bounds come from the schema through /api/meta, so the rail cannot take the
+ * deck outside slides.minItems…maxItems in the first place.
+ */
+function buildRailFoot(rail) {
+  const { min, max } = state.meta.slides;
+  const n = state.deck.slides.length;
+
+  const foot = document.createElement('div');
+  foot.className = 'railfoot';
+  foot.innerHTML =
+    '<button class="rbtn" data-act="add" aria-label="Add slide">+</button>'
+    + '<button class="rbtn" data-act="del" aria-label="Remove the selected slide">−</button>'
+    + `<span class="rcount">${n}/${max}</span>`;
+
+  const add = $('[data-act="add"]', foot);
+  const del = $('[data-act="del"]', foot);
+  add.disabled = n >= max;
+  del.disabled = n <= min;
+  add.title = add.disabled ? `${max} slides is the schema maximum.` : 'Add a slide before the CTA';
+  del.title = del.disabled ? `${min} slides is the schema minimum.` : 'Remove the selected slide';
+  add.onclick = addSlide;
+  del.onclick = () => removeSlide(state.index);
+
+  rail.appendChild(foot);
 }
 
 /**
@@ -725,19 +755,53 @@ function wireThumbDrag(thumb, rail) {
 }
 
 /**
- * Move a slide from one slot to another and re-derive every slide's type from
- * its new position — slot 0 is the hook, the last is the cta, the rest body.
- * Mirrors repairDeck() in src/validate.js so a reordered deck always validates.
+ * Slot 0 is the hook, the last slot is the cta, everything between is body.
+ * Every structural edit re-derives type from position rather than trying to
+ * carry it along — the same rule repairDeck() applies in src/validate.js, so a
+ * rearranged deck always validates.
  */
+function retypeSlides() {
+  const slides = state.deck.slides;
+  const last = slides.length - 1;
+  slides.forEach((s, i) => { s.type = i === 0 ? 'hook' : i === last ? 'cta' : 'body'; });
+}
+
+/** Move a slide from one slot to another, then re-derive every type. */
 function moveSlide(from, to) {
   const slides = state.deck.slides;
   if (from === to || from < 0 || to < 0 || from >= slides.length || to >= slides.length) return;
   const [moved] = slides.splice(from, 1);
   slides.splice(to, 0, moved);
-  const last = slides.length - 1;
-  slides.forEach((s, i) => { s.type = i === 0 ? 'hook' : i === last ? 'cta' : 'body'; });
+  retypeSlides();
   buildRail();
   selectSlide(to);
+  revalidate();
+}
+
+/**
+ * Insert a blank body slide *before* the cta, never at the end. Types are
+ * derived from position, so appending would demote the author's closing slide to
+ * a body and promote this placeholder into the cta slot.
+ */
+function addSlide() {
+  const slides = state.deck.slides;
+  if (slides.length >= state.meta.slides.max) return;
+  const at = Math.max(1, slides.length - 1);
+  slides.splice(at, 0, { type: 'body', heading: `Point ${at}`, body: 'Add your point here.' });
+  retypeSlides();
+  buildRail();
+  selectSlide(at);
+  revalidate();
+}
+
+/** Remove one slide, then re-derive types — a neighbour inherits hook or cta. */
+function removeSlide(i) {
+  const slides = state.deck.slides;
+  if (slides.length <= state.meta.slides.min || i < 0 || i >= slides.length) return;
+  slides.splice(i, 1);
+  retypeSlides();
+  buildRail();
+  selectSlide(Math.min(i, slides.length - 1));
   revalidate();
 }
 
