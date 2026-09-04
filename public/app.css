@@ -456,6 +456,29 @@ textarea:focus, input:focus {
 .rthumb.drag-src { opacity: .4; }
 .rthumb.drag-over { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-soft); }
 
+/* Add / remove. Sticky so it stays reachable once ten thumbs make the rail
+   scroll; margin-top:auto pins it to the floor when they don't. The bounds are
+   the schema's, so at 5 or 10 slides a button simply disables — same idea as
+   maxLength on the text inputs: the UI can't author an invalid deck. */
+.railfoot {
+  position: sticky; bottom: 0; z-index: 2;
+  margin-top: auto; padding: 9px 0 2px;
+  display: flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  background: linear-gradient(to top, var(--panel) 74%, transparent);
+}
+.rbtn {
+  width: 34px; height: 28px; flex: 0 0 auto;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px;
+  font-size: 15px; font-weight: 700; line-height: 1;
+}
+.rbtn:hover:not(:disabled) { background: var(--raise); border-color: #2C3945; }
+.rbtn:disabled { opacity: .38; cursor: not-allowed; }
+.rcount {
+  margin-left: auto; font-size: 11px; font-weight: 700; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ------------------------------------------------------------------ stage */
 .stage {
   display: flex; flex-direction: column; align-items: center; justify-content: center;

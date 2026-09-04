@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "dev:degraded": "node scripts/dev-degraded.mjs",
     "render": "node src/render.js",
     "validate": "node src/validate.js",
     "generate": "node src/generate.js",
