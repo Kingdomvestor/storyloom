@@ -27,11 +27,13 @@ Other invariants:
 
 ## Scope line
 
-**Week A (now):** compose → generate → edit → preview → render PNGs.
-**Week B (not now):** reorder, add/remove slides, undo/redo, autosave, download/zip/PDF,
-watermark enforcement, auth, credits, Supabase.
+**Week A (shipped):** compose → generate → edit → preview → render PNGs.
+**Shipped since:** auth, credits, Supabase deck store, explicit save, template
+gallery, drag-to-reorder on the rail.
+**Not built yet:** add/remove slides, undo/redo, autosave, download/zip/PDF,
+watermark enforcement.
 
-Do not build Week B items without being asked.
+Do not build a not-built-yet item without being asked.
 
 ## Environment
 
