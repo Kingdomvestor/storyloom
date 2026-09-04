@@ -72,5 +72,10 @@ re-sent on every turn after.
 
 ## Convention
 
+`MEMORY.md` is the feature ledger — what is shipped, what is left, what is out of
+scope. Update it in the same commit as the work: move the item, date the header,
+and add loose ends as you find them. If it disagrees with the code, the code wins
+and the ledger is the bug.
+
 When real work closes, append an X draft to `posts.md` — Vestor builds in public
 as **@kingdomvestor**. Prefer the honest debugging story over the feature announcement.
