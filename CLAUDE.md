@@ -40,6 +40,10 @@ Do not build Week B items without being asked.
 - Git Bash maps `/tmp` → `C:\tmp`, but Node writes to the Windows temp dir.
   Use `process.env.TEMP`, never `/tmp`.
 - Dev server: `.claude/launch.json` → name `storyloom`, `npm start`, port 3000.
+- Project-local Claude settings belong in `.claude/settings.json`. To make Claude
+  use this folder for its config, set `CLAUDE_CONFIG_DIR` in the shell or user
+  environment before launching Claude Code; do not put that variable inside the
+  settings file itself.
 
 ## Secrets
 
