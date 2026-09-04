@@ -717,6 +717,9 @@ function wireThumbDrag(thumb, rail) {
     e.preventDefault();
     const from = Number(e.dataTransfer.getData('text/plain'));
     const to = Number(thumb.dataset.index);
+    // buildRail() detaches the drag source, so dragend is not guaranteed to
+    // fire — drop the class here or the shields stay live over a dead drag.
+    rail.classList.remove('dragging');
     moveSlide(from, to);
   });
 }
