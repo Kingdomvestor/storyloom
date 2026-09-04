@@ -676,13 +676,66 @@ function buildRail() {
   state.deck.slides.forEach((_s, i) => {
     const thumb = document.createElement('button');
     thumb.className = 'rthumb';
-    thumb.innerHTML = `<iframe src="/templates/carousel.html" scrolling="no" tabindex="-1"></iframe><span class="n"></span>`;
+    thumb.draggable = true;
+    thumb.dataset.index = String(i);
+    // The .shield sits over the iframe so a drag grabs the thumb, not the
+    // pointer-events:none iframe underneath. It's inert until a drag starts.
+    thumb.innerHTML = `<iframe src="/templates/carousel.html" scrolling="no" tabindex="-1"></iframe><span class="shield"></span><span class="n"></span>`;
     $('.n', thumb).textContent = String(i + 1);
     thumb.onclick = () => selectSlide(i);
+    wireThumbDrag(thumb, rail);
     rail.appendChild(thumb);
     scaleFrame(thumb, $('iframe', thumb), width);
     show($('iframe', thumb), state.deck, i);
   });
+}
+
+/**
+ * HTML5 drag-and-drop for one rail thumb. The rail gets a `dragging` class for
+ * the duration so .shield overlays go live (see app.css) and the iframes stop
+ * swallowing the drag. Index is read from dataset at drop time, not closure,
+ * so it survives a rebuild.
+ */
+function wireThumbDrag(thumb, rail) {
+  thumb.addEventListener('dragstart', (e) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', thumb.dataset.index);
+    rail.classList.add('dragging');
+    thumb.classList.add('drag-src');
+  });
+  thumb.addEventListener('dragend', () => {
+    rail.classList.remove('dragging');
+    $$('.rthumb').forEach((t) => t.classList.remove('drag-src', 'drag-over'));
+  });
+  thumb.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    thumb.classList.add('drag-over');
+  });
+  thumb.addEventListener('dragleave', () => thumb.classList.remove('drag-over'));
+  thumb.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const from = Number(e.dataTransfer.getData('text/plain'));
+    const to = Number(thumb.dataset.index);
+    moveSlide(from, to);
+  });
+}
+
+/**
+ * Move a slide from one slot to another and re-derive every slide's type from
+ * its new position — slot 0 is the hook, the last is the cta, the rest body.
+ * Mirrors repairDeck() in src/validate.js so a reordered deck always validates.
+ */
+function moveSlide(from, to) {
+  const slides = state.deck.slides;
+  if (from === to || from < 0 || to < 0 || from >= slides.length || to >= slides.length) return;
+  const [moved] = slides.splice(from, 1);
+  slides.splice(to, 0, moved);
+  const last = slides.length - 1;
+  slides.forEach((s, i) => { s.type = i === 0 ? 'hook' : i === last ? 'cta' : 'body'; });
+  buildRail();
+  selectSlide(to);
+  revalidate();
 }
 
 /** Refresh one rail thumbnail (used while typing — the other nine don't change). */
@@ -1176,3 +1229,4 @@ async function renderPngs() {
 }
 
 boot();
+window.__devSeed = (deck) => openEditor(deck, { source: 'template' });

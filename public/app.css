@@ -447,6 +447,15 @@ textarea:focus, input:focus {
 }
 .rthumb.on .n { background: var(--gold); color: #17120A; }
 
+/* Drag-to-reorder. The shield is inert until a drag begins, then goes live so
+   the iframe underneath (pointer-events:none) can't swallow the drag. */
+.rthumb { cursor: grab; }
+.rthumb .shield { position: absolute; inset: 0; pointer-events: none; }
+.rail.dragging .rthumb .shield { pointer-events: auto; }
+.rail.dragging .rthumb { cursor: grabbing; }
+.rthumb.drag-src { opacity: .4; }
+.rthumb.drag-over { border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-soft); }
+
 /* ------------------------------------------------------------------ stage */
 .stage {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
