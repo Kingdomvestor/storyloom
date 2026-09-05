@@ -60,7 +60,7 @@ export async function getDefault(userId) {
   // Tolerant on purpose: this one is read on the way into the editor, so a
   // database still on migration 0001 should mean "no default brand", not a
   // failure to open a deck.
-  if (error?.code === '42P01') return null;
+  if (error?.code === '42P01' || error?.code === 'PGRST205') return null;
   if (error) throw new Error(`brands.getDefault: ${error.message}`);
   return data;
 }
