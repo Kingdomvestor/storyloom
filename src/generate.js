@@ -45,6 +45,25 @@ if (!process.env.GEMINI_API_KEY) {
 }
 
 export const MODEL = process.env.GEMINI_MODEL || 'gemini-3.7-flash';
+
+/**
+ * Where to go when the chosen model answers "This model is currently experiencing
+ * high demand". That 503 is per-model, not per-key: on Sept 4 the default returned
+ * it while gemini-3.5-flash answered the same prompt in 1.3s. A deck the user can
+ * edit is worth more than loyalty to one model, so the chain is walked in order and
+ * the notes say which model actually wrote the deck.
+ *
+ * Older families are not candidates. A key issued today gets
+ * `models/gemini-2.5-flash is no longer available to new users` — a 404, instantly,
+ * which would make the fallback *look* broken. Every entry here is 3.x.
+ */
+export const MODEL_FALLBACKS = (process.env.GEMINI_FALLBACK_MODELS ?? 'gemini-3.5-flash,gemini-3.5-flash-lite')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+/** The models to try for one logical request: primary first, no repeats. */
+export const modelChain = (primary = MODEL) => [primary, ...MODEL_FALLBACKS.filter((m) => m !== primary)];
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 const TEMPERATURE = Number(process.env.GEMINI_TEMPERATURE ?? 0.7);
 const MAX_OUTPUT_TOKENS = Number(process.env.GEMINI_MAX_OUTPUT_TOKENS ?? 16384);
@@ -168,6 +187,8 @@ function apiKey() {
 }
 
 const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+// The subset another model can fix: a queue, not a bad request.
+const OVERLOADED_STATUS = new Set([429, 503]);
 const RETRY_BASE_MS = Number(process.env.GEMINI_RETRY_BASE_MS ?? 1000);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -193,7 +214,7 @@ function unfence(text) {
  * One Gemini call, with retries for transport-level failure only.
  * Returns { ok: true, text, finishReason, usage } or { ok: false, kind, message }.
  */
-async function callGemini({ system, contents, model, attempts = 3, format = responseSchema }) {
+async function callOneModel({ system, contents, model, attempts = 3, format = responseSchema }) {
   const key = apiKey();
   if (!key) {
     return {
@@ -246,6 +267,19 @@ async function callGemini({ system, contents, model, attempts = 3, format = resp
         lastMessage = message;
         continue;
       }
+      // 429/503 gets its own kind because it is the one failure a *different model*
+      // can fix; callGemini() switches on it. Google's sentence is kept as `detail`
+      // rather than shown — the user needs to know what to do next, not whose queue
+      // they are in.
+      if (OVERLOADED_STATUS.has(response.status)) {
+        return {
+          ok: false,
+          kind: 'overloaded',
+          status: response.status,
+          message: `${model} is busy right now.`,
+          detail: `${model} → ${response.status}: ${message}`,
+        };
+      }
       return { ok: false, kind: 'http_error', status: response.status, message };
     }
 
@@ -289,6 +323,46 @@ async function callGemini({ system, contents, model, attempts = 3, format = resp
   }
 
   return { ok: false, kind: 'network_error', message: lastMessage || 'exhausted retries' };
+}
+
+/** A timeout is the other shape "busy" takes: the model accepted us and never answered. */
+const isTimeout = (r) => r.kind === 'network_error' && /timed out/.test(r.message ?? '');
+
+/**
+ * One logical call, over as many models as it takes.
+ *
+ * callOneModel() already retries the same model three times with a widening delay,
+ * which is the right answer to a blip. It is the wrong answer to a model that is
+ * *saturated* — waiting 1s then 3s on a queue that clears in minutes just spends
+ * the user's patience to reach the same 503. So when the model says it is busy, or
+ * accepts the request and never answers, the next model in the chain gets the same
+ * prompt.
+ *
+ * Every other failure stops here. A blocked prompt, a truncated response or a bad
+ * request will fail identically on a fresh model, and trying anyway would turn one
+ * clear error into three slow ones.
+ *
+ * Adds `model` (whoever answered) and `tried` (in order) to the result.
+ */
+async function callGemini({ model = MODEL, ...rest }) {
+  const chain = modelChain(model);
+  const tried = [];
+  let last;
+  for (const candidate of chain) {
+    const result = await callOneModel({ ...rest, model: candidate });
+    tried.push(candidate);
+    if (result.ok) return { ...result, model: candidate, tried };
+    last = result;
+    if (!(result.kind === 'overloaded' || isTimeout(result))) break;
+  }
+
+  // Only rewrite the message once the whole chain is exhausted — before that the
+  // per-model text is what the next attempt is reacting to.
+  const message =
+    last.kind === 'overloaded' && tried.length > 1
+      ? `Every model tried is busy (${tried.join(', ')}). This clears on its own — give it a minute.`
+      : last.message;
+  return { ...last, message, model: tried.at(-1), tried };
 }
 
 // -------------------------------------------------------------------- assembly
@@ -389,8 +463,12 @@ export async function generateDeck(input = {}) {
     attempts = pass;
     const call = await callGemini({ system, contents, model });
     if (!call.ok) {
+      if (call.tried?.length > 1) notes.push(`tried ${call.tried.join(' → ')}`);
+      if (call.detail) notes.push(call.detail);
       return { ok: false, kind: call.kind, message: call.message, notes, attempts };
     }
+    // A silent model swap is a support ticket six months from now.
+    if (call.model && call.model !== model) notes.push(`${model} was busy — written by ${call.model}`);
     usage = call.usage ?? usage;
 
     let authored;
@@ -657,7 +735,11 @@ export async function rewriteSlide(input = {}) {
     format: slideResponseSchema,
     attempts: 2,
   });
-  if (!call.ok) return { ok: false, kind: call.kind, message: call.message, notes };
+  if (!call.ok) {
+    if (call.tried?.length > 1) notes.push(`tried ${call.tried.join(' → ')}`);
+    return { ok: false, kind: call.kind, message: call.message, notes };
+  }
+  if (call.model && call.model !== (input.model || MODEL)) notes.push(`rewritten by ${call.model}`);
 
   let parsed;
   try {

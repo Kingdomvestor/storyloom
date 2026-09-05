@@ -616,6 +616,37 @@ const STAGES_TEXT = [
 ];
 const STAGES_URL = ['Fetching the page…', 'Stripping nav, ads and footers…', ...STAGES_TEXT.slice(1)];
 
+/**
+ * A `kind` is for the server log; a human needs to know whose problem it is and
+ * what to do next. Anything missing here falls back to "Could not generate" —
+ * which is still better than printing `http_error:` at someone.
+ */
+const ERROR_LABELS = {
+  overloaded: 'The model is busy',
+  no_credits: 'Out of credits',
+  unauthorized: 'Sign in to continue',
+  no_input: 'Nothing to work with',
+  no_api_key: 'Not configured',
+  bad_url: 'That link looks wrong',
+  unsupported_protocol: 'That link looks wrong',
+  blocked_host: 'That link is not allowed',
+  not_html: 'That link is not an article',
+  no_article: 'Nothing readable on that page',
+  too_thin: 'Too little text on that page',
+  fetch_error: 'Could not reach that page',
+  too_many_redirects: 'Could not reach that page',
+  parse_error: 'Could not read that page',
+  network_error: 'Could not reach the model',
+  empty_response: 'The model returned nothing',
+  blocked: 'The model refused the prompt',
+  truncated: 'The response was cut off',
+  unrepairable: 'Could not build a valid deck',
+  http_error: 'The model rejected the request',
+  render_error: 'Could not render the slides',
+  server_error: 'Something broke on the server',
+};
+const errorLabel = (kind) => ERROR_LABELS[kind] ?? 'Could not generate';
+
 async function generate() {
   const btn = $('#generateBtn');
   if (btn.disabled) return;
@@ -682,12 +713,20 @@ async function generate() {
   btn.disabled = false;
 
   if (!result.ok) {
+    // The server refunds on failure and sends the balance back with the error, so
+    // the pill agrees with the ledger without a reload.
+    if (typeof result.credits === 'number') { state.credits = result.credits; renderCredits(); }
     err.hidden = false;
     err.innerHTML = '';
     const b = document.createElement('b');
-    b.textContent = `${result.kind}: `;
+    b.textContent = `${errorLabel(result.kind)}: `;
     err.appendChild(b);
     err.appendChild(document.createTextNode(result.message));
+    if (result.notes?.includes('credit refunded')) {
+      const small = document.createElement('small');
+      small.textContent = ' Your credit was refunded.';
+      err.appendChild(small);
+    }
     return;
   }
   if (typeof result.credits === 'number') { state.credits = result.credits; renderCredits(); }

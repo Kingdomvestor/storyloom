@@ -95,6 +95,7 @@ const STATUS_BY_KIND = {
   fetch_error: 502,
   // our fault or upstream's
   no_api_key: 503,
+  overloaded: 503,      // every model in the chain answered "high demand"
   network_error: 502,
   empty_response: 502,
   blocked: 502,
@@ -247,8 +248,25 @@ app.post('/api/generate', requireUser, async (req, res) => {
   const seconds = Number(process.hrtime.bigint() - started) / 1e9;
 
   if (!result.ok) {
-    if (req.user) await credits.refund(req.user.id).catch((e) => console.error('refund failed:', e));
-    return fail(res, result.kind, result.message, { notes: result.notes, extracted });
+    const notes = result.notes ?? [];
+    // Say the refund out loud and send the balance back with the error. A failed
+    // generation that silently keeps the credit is indistinguishable from theft,
+    // and the credits pill has already been decremented in the browser.
+    if (req.user) {
+      const back = await credits.refund(req.user.id).catch((e) => {
+        console.error('refund failed:', e);
+        return null;
+      });
+      if (back !== null) {
+        notes.push('credit refunded');
+        remaining = back;
+      }
+    }
+    return fail(res, result.kind, result.message, {
+      notes,
+      extracted,
+      ...(remaining !== null ? { credits: remaining } : {}),
+    });
   }
   res.json({
     ok: true,
