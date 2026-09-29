@@ -56,6 +56,8 @@ const state = {
 };
 
 let sb = null; // supabase browser client, or null when unconfigured
+let persistPromise = null;
+let deckRevision = 0;
 
 // ----------------------------------------------------------------- transport
 async function api(path, body, opts = {}) {
@@ -115,6 +117,7 @@ function setAuthMessage(text, { error = false } = {}) {
 async function applySession(session, { navigate = true } = {}) {
   state.user = session?.user ?? null;
   document.documentElement.dataset.auth = state.user ? 'in' : 'out';
+  $('#brandHome').href = state.user ? '/studio' : '/';
   if (!state.user) {
     state.credits = null;
     state.deckId = null;
@@ -189,8 +192,45 @@ function wireAuth() {
       ? 'Have an account? Sign in' : 'New here? Create an account';
     $('#authPassword').autocomplete = to === 'signup' ? 'new-password' : 'current-password';
   };
-  $('#logoutBtn').onclick = () => sb?.auth.signOut();
-  $('#dashLink').onclick = () => applySession({ user: state.user });
+  $('#logoutBtn').onclick = async () => {
+    if (state.deck && state.dirty && state.user) {
+      const r = await persist();
+      if (!r.ok) {
+        $('#stageNote').textContent = `Sign out paused — save failed: ${r.message}`;
+        scheduleAutosaveRetry(r.message);
+        return;
+      }
+    }
+    await sb?.auth.signOut();
+  };
+  $('#brandHome').onclick = async (event) => {
+    if (!state.user) return;
+    event.preventDefault();
+    if (state.deck && state.dirty) {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+      const r = await persist();
+      if (!r.ok) {
+        $('#stageNote').textContent = `Cannot leave yet — save failed: ${r.message}`;
+        scheduleAutosaveRetry(r.message);
+        return;
+      }
+    }
+    await applySession({ user: state.user });
+  };
+  $('#dashLink').onclick = async () => {
+    if (state.deck && state.dirty && state.user) {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+      const r = await persist();
+      if (!r.ok) {
+        $('#stageNote').textContent = `Cannot leave yet — save failed: ${r.message}`;
+        scheduleAutosaveRetry(r.message);
+        return;
+      }
+    }
+    await applySession({ user: state.user });
+  };
 }
 
 async function loadDashboard() {
@@ -260,15 +300,34 @@ function wireDashboard() {
 
 /** The one write path to the deck store, shared by the Save button and autosave. */
 async function persist() {
-  const payload = { title: state.deck.title || 'Untitled', deck: state.deck };
-  const r = state.deckId
-    ? await api('/api/decks/' + state.deckId, payload, { method: 'PUT' })
-    : await api('/api/decks', payload);
-  if (r.ok) {
-    state.deckId = r.id ?? state.deckId;
-    state.dirty = false;
+  if (persistPromise) return persistPromise;
+
+  const pending = (async () => {
+    let r;
+    do {
+      const revision = deckRevision;
+      const deck = structuredClone(state.deck);
+      const payload = { title: deck.title || 'Untitled', deck };
+      const id = state.deckId;
+      try {
+        r = id
+          ? await api('/api/decks/' + id, payload, { method: 'PUT' })
+          : await api('/api/decks', payload);
+      } catch (error) {
+        return { ok: false, message: error.message || 'Network request failed.' };
+      }
+      if (!r.ok) return r;
+      state.deckId = r.id ?? state.deckId;
+      state.dirty = deckRevision !== revision;
+    } while (state.dirty);
+    return r;
+  })();
+  persistPromise = pending;
+  try {
+    return await pending;
+  } finally {
+    if (persistPromise === pending) persistPromise = null;
   }
-  return r;
 }
 
 async function saveDeck() {
@@ -278,7 +337,7 @@ async function saveDeck() {
   btn.disabled = false; btn.textContent = 'Save';
   if (!r.ok) {
     $('#stageNote').textContent = `Save failed — ${r.message}`;
-    setAutoState('failed', 'Save failed');
+    scheduleAutosaveRetry(r.message);
     return;
   }
   btn.textContent = 'Saved ✓';
@@ -301,6 +360,20 @@ function setAutoState(kind, text) {
 }
 
 let autosaveTimer = null;
+let autosaveFailures = 0;
+
+function scheduleAutosaveRetry(message) {
+  const retryMs = Math.min(60000, 5000 * 2 ** autosaveFailures++);
+  setAutoState('failed', `Save failed: ${message}. Retrying in ${Math.ceil(retryMs / 1000)}s`);
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(autosave, retryMs);
+}
+
+window.addEventListener('beforeunload', (event) => {
+  if (!state.dirty || !state.user) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
 
 /**
  * Every deck mutation lands here (see revalidate). Two things follow from an
@@ -310,6 +383,8 @@ let autosaveTimer = null;
  */
 function markDirty() {
   if (!state.deck) return;
+  autosaveFailures = 0;
+  deckRevision++;
   state.dirty = true;
   if (!state.user) return;   // degraded / signed out: nowhere to autosave to
   setAutoState('pending', 'Unsaved…');
@@ -325,7 +400,12 @@ async function autosave() {
   if (state.errors.length) return setAutoState('pending', 'Fix errors to save');
   setAutoState('pending', 'Saving…');
   const r = await persist();
-  setAutoState(r.ok ? 'saved' : 'failed', r.ok ? undefined : 'Autosave failed');
+  if (r.ok) {
+    autosaveFailures = 0;
+    setAutoState('saved');
+    return;
+  }
+  scheduleAutosaveRetry(r.message);
 }
 
 /**
@@ -450,9 +530,10 @@ async function boot() {
   state.compose.narrative = meta.narratives[0];
   state.compose.platform = meta.platforms[0];
 
-  $('#modelName').textContent = meta.hasApiKey ? meta.model : 'no key';
+  const modelName = $('#modelName');
+  if (modelName) modelName.textContent = meta.hasApiKey ? meta.model : 'no key';
   if (!meta.hasApiKey) {
-    $('#modelPill').classList.add('off');
+    $('#modelPill')?.classList.add('off');
     $('#noKeyWarn').hidden = false;
     $('#generateBtn').disabled = true;
   }
@@ -477,6 +558,7 @@ async function boot() {
     // No accounts configured — degrade to today's single-user behavior, but
     // make the reason discoverable if someone lands on the auth view.
     $('#authNotice').hidden = false;
+    $('#brandHome').href = '/';
     document.documentElement.dataset.auth = 'out';
     document.documentElement.dataset.view = 'compose';
     loadGallery();                 // templates are the whole app in degraded mode
@@ -771,6 +853,10 @@ async function loadGallery() {
 
 // ===================================================================== EDITOR
 function openEditor(deck, info = {}) {
+  clearTimeout(autosaveTimer);
+  autosaveTimer = null;
+  deckRevision = 0;
+  $('#backBtn').disabled = false;
   state.deck = deck;
   state.index = 0;
   state.deckId = info.deckId ?? null;
@@ -803,7 +889,21 @@ function openEditor(deck, info = {}) {
 }
 
 function wireEditor() {
-  $('#backBtn').onclick = () => {
+  $('#backBtn').onclick = async () => {
+    const back = $('#backBtn');
+    back.disabled = true;
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+    if (state.dirty && state.user) {
+      setAutoState('pending', 'Saving before leaving…');
+      const r = await persist();
+      if (!r.ok) {
+        $('#stageNote').textContent = `Cannot leave yet — save failed: ${r.message}`;
+        scheduleAutosaveRetry(r.message);
+        back.disabled = false;
+        return;
+      }
+    }
     state.deckId = null;
     document.documentElement.dataset.view = state.user ? 'dashboard' : 'compose';
     if (state.user) loadDashboard();

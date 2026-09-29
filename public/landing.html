@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="dark light">
+<meta name="description" content="Storyloom — Turn an idea or article into a polished 1080×1350 carousel for LinkedIn & Instagram. 5-10 editable slides, 3 styles, export PNG/PDF/ZIP.">
+<title>Storyloom — Text in. On-brand carousel out.</title>
+
+<!-- 1. ANTI-FOUC: Set theme BEFORE paint -->
+<script src="/theme.js"></script>
+
+<style>
+  :root{
+    --bg:#070708; --card:#111113; --line:#222226; --text:#ffffff; --muted:#9a9aa0; --lime:#D6FF2B; --lime-text:#000;
+    color-scheme: dark light;
+  }
+  [data-theme="light"]{
+    --bg:#F8F7F2; --card:#FFFFFF; --line:#E8E8E3; --text:#0A0A0B; --muted:#6B6B74; --lime:#D6FF2B; --lime-text:#0A0A0B;
+  }
+  [data-theme="dark"]{
+    --bg:#070708; --card:#111113; --line:#222226; --text:#ffffff; --muted:#9a9aa0; --lime:#D6FF2B; --lime-text:#000;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} *{transition:none !important; animation:none !important} }
+  body{font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);line-height:1.5;transition:background-color .25s ease,color .25s ease}
+  a{color:inherit;text-decoration:none}
+  :focus-visible{outline:2px solid var(--lime);outline-offset:2px}
+  
+  /* NAV */
+  .nav{position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--line);background:color-mix(in srgb, var(--bg) 90%, transparent);backdrop-filter:blur(8px)}
+  .nav-left{display:flex;align-items:center;gap:24px}
+  .nav-links{display:flex;gap:24px;font-size:13px;color:var(--muted)}
+  .nav-links a:hover{color:var(--text)}
+  .nav-right{display:flex;align-items:center;gap:10px}
+  .btn{padding:10px 18px;border-radius:999px;font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);cursor:pointer;transition:all .2s;white-space:nowrap}
+  .btn-primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+  .btn-primary:hover{opacity:.9;transform:translateY(-1px)}
+  .btn-ghost{background:transparent;color:var(--text);border-color:var(--line)}
+  .btn-ghost:hover{border-color:var(--muted);background:var(--card)}
+  
+  /* THEME TOGGLE */
+  .theme-toggle{width:40px;height:40px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--text);display:grid;place-items:center;cursor:pointer;transition:all .2s}
+  .theme-toggle:hover{border-color:var(--muted);transform:rotate(15deg)}
+  .theme-toggle svg{width:18px;height:18px}
+  .mobile-menu{display:none;position:relative}
+  .mobile-menu>summary{list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:999px;padding:9px 12px;font-size:13px}
+  .mobile-menu>summary::-webkit-details-marker{display:none}
+  .mobile-menu>summary::after{content:"+";margin-left:6px;color:var(--muted)}
+  .mobile-menu[open]>summary::after{content:"−"}
+  .mobile-menu-panel{position:absolute;right:0;top:calc(100% + 8px);z-index:30;min-width:170px;display:grid;padding:6px;background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 32px #0005}
+  .mobile-menu-panel a{padding:10px 12px;font-size:13px;color:var(--muted)}
+  .mobile-menu-panel a:hover{color:var(--text);background:var(--bg)}
+  @media(max-width:700px){.nav-links{display:none}.mobile-menu{display:block}.nav{padding:12px 16px}.nav-left{gap:12px}.nav-right{gap:6px}.nav-right>.btn{padding:9px 11px;font-size:12px}.theme-toggle{width:36px;height:36px}}
+  @media(max-width:420px){.nav{padding:10px 12px}.nav-left strong{font-size:13px}.nav-right>.btn{padding:8px 9px;font-size:11px}}
+
+  /* HERO */
+  .hero{max-width:1200px;margin:0 auto;padding:60px 24px 40px;display:grid;grid-template-columns:1.1fr 0.9fr;gap:40px;align-items:center}
+  @media(max-width:900px){.hero{grid-template-columns:1fr}}
+  .eyebrow{font-size:11px;letter-spacing:0.12em;color:var(--muted);text-transform:uppercase}
+  .eyebrow span{color:var(--lime-text);background:var(--lime);padding:2px 6px;border-radius:4px}
+  h1{font-size:clamp(36px, 6vw, 56px);line-height:0.95;letter-spacing:-0.04em;margin:12px 0}
+  h1 span{color:var(--lime)}
+  [data-theme="light"] h1 span{color:#8FA800}
+  .sub{color:var(--muted);max-width:520px;margin:16px 0 24px;font-size:18px}
+  .hero-preview{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;transition:background-color .25s,border-color .25s}
+  .demo-label{font-size:11px;letter-spacing:0.08em;color:var(--muted);text-transform:uppercase;margin-bottom:12px;text-align:center}
+  .slides{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .slide-preview{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;background:var(--bg);border:1px solid var(--line);border-radius:8px}
+
+  .ticker{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:10px 0;overflow:hidden;white-space:nowrap;color:var(--muted);font-size:12px;letter-spacing:0.08em;background:var(--bg);text-align:center}
+  section{max-width:1200px;margin:0 auto;padding:64px 24px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:900px){.grid3{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px;transition:background-color .25s,border-color .25s}
+  .card h3{margin:8px 0;font-size:18px;color:var(--text)}
+  .card p{color:var(--muted);font-size:14px}
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  @media(max-width:900px){.steps{grid-template-columns:1fr 1fr}}
+  @media(max-width:520px){.steps{grid-template-columns:1fr}}
+  .step-num{color:var(--lime);font-size:12px;font-weight:700}
+  [data-theme="light"] .step-num{color:#8FA800}
+  .faq{max-width:800px}
+  .faq details{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:8px}
+  .faq summary{cursor:pointer;font-weight:600;list-style:none;display:flex;justify-content:space-between;align-items:center;color:var(--text)}
+  .faq summary::-webkit-details-marker{display:none}
+  .faq summary::after{content:"+";color:var(--muted);font-weight:400;font-size:18px}
+  .faq details[open] summary::after{content:"−"}
+
+  .cta-lime{background:var(--lime);color:var(--lime-text);padding:64px 24px;text-align:center}
+  .cta-lime h2{font-size:clamp(40px, 8vw, 56px);letter-spacing:-0.05em;line-height:0.9;color:var(--lime-text)}
+  footer{padding:24px;text-align:center;color:var(--muted);font-size:12px;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+
+<nav class="nav" aria-label="Main navigation">
+  <div class="nav-left">
+    <a href="/" aria-label="Storyloom home"><strong style="letter-spacing:0.08em">STORYLOOM</strong></a>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#examples">Examples</a>
+      <a href="/signin">Sign in</a>
+    </div>
+  </div>
+  <div class="nav-right">
+    <details class="mobile-menu">
+      <summary>Menu</summary>
+      <div class="mobile-menu-panel">
+        <a href="#how">How it works</a>
+        <a href="#examples">Examples</a>
+        <a href="/signin">Sign in</a>
+      </div>
+    </details>
+    <button id="theme-toggle" class="theme-toggle" data-theme-toggle type="button" aria-label="Switch color theme">
+      <!-- Icon injected by JS -->
+    </button>
+    <a href="/studio" class="btn btn-primary">Open the studio →</a>
+  </div>
+</nav>
+
+<div class="ticker" aria-hidden="true">ONE IDEA &nbsp; → &nbsp; FIVE TO TEN EDITABLE SLIDES &nbsp; • &nbsp; 4:5 &nbsp; 1080×1350 &nbsp; • &nbsp; LINKEDIN / INSTAGRAM &nbsp; • &nbsp; PNG • PDF • ZIP</div>
+
+<header class="hero">
+  <div>
+    <div class="eyebrow"><span>MVP in development · Testing on Render</span></div>
+    <h1>Text in.<br>On-brand<br><span>carousel out.</span></h1>
+    <p class="sub">Turn an idea or article into a polished carousel. Edit every slide, make it yours, and export it ready to post.</p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <a href="/studio" class="btn btn-primary">Try the MVP →</a>
+      <a href="#examples" class="btn btn-ghost">See a real carousel</a>
+    </div>
+    <p style="margin-top:12px;font-size:12px;color:var(--muted)">One idea. Five to ten editable slides. Real Storyloom output.</p>
+  </div>
+  <div class="hero-preview" aria-label="Style preview">
+    <div class="demo-label">Three real starter decks, rendered by Storyloom</div>
+    <div class="slides">
+      <img class="slide-preview" src="/demo/signature-african/slide-01.png" alt="Signature African style: 5 rules for posts that travel" />
+      <img class="slide-preview" src="/demo/editorial-clean/slide-01.png" alt="Editorial Clean style: The draft nobody wanted to write" />
+      <img class="slide-preview" src="/demo/mono-terminal/slide-01.png" alt="Mono Terminal style: Ship a side project in one weekend" />
+    </div>
+    <p style="margin-top:12px;font-size:12px;color:var(--muted);text-align:center">Source: Storyloom starter fixtures · rendered at 1080 × 1350</p>
+  </div>
+</header>
+
+<section>
+  <h2>Two ways to start</h2>
+  <div class="grid3" style="margin-top:16px">
+    <div class="card">
+      <small class="eyebrow" style="color:var(--muted)">Uses 1 credit</small>
+      <h3>Generate from text or a link</h3>
+      <p>Paste your writing or an article URL. Storyloom structures it into slide copy. Choose listicle, how-to, story, myth-bust, case-study, or manual.</p>
+    </div>
+    <div class="card">
+      <small class="eyebrow" style="color:var(--muted)">No AI call · Free</small>
+      <h3>Start from a template</h3>
+      <p>Pick a starter deck and edit it yourself. No credit needed. Best for testing the editor or when you already know what you want to say.</p>
+    </div>
+    <div class="card" style="border-color:var(--lime)">
+      <h3>What you can do after</h3>
+      <p>Save brand details • Reorder / add / remove slides • Edit text on canvas or in editor • Undo/redo • Export PNG, PDF, or ZIP</p>
+    </div>
+  </div>
+</section>
+
+<section id="how">
+  <h2>How it works</h2>
+  <p style="color:var(--muted);margin:8px 0 24px">Four moves from idea to finished carousel.</p>
+  <div class="steps">
+    <div class="card"><div class="step-num">01</div><h3>Add text or a URL</h3><p>Start with your own writing or an article.</p></div>
+    <div class="card"><div class="step-num">02</div><h3>Choose structure and style</h3><p>Pick slide count 5–10, narrative shape, platform, and Signature African / Editorial Clean / Mono Terminal.</p></div>
+    <div class="card"><div class="step-num">03</div><h3>Edit your carousel</h3><p>Change words, reorder, add or remove slides, apply your brand. Live preview uses the same HTML/CSS that exports.</p></div>
+    <div class="card"><div class="step-num">04</div><h3>Export and post</h3><p>Download PNGs, a PDF, or a ZIP. 1080×1350, 4:5 for LinkedIn and Instagram.</p></div>
+  </div>
+</section>
+
+<section id="examples">
+  <h2>Examples — real Storyloom output</h2>
+  <p style="color:var(--muted);margin:8px 0 24px">Starter decks rendered with the same template used by the editor and exports.</p>
+  <div class="grid3">
+    <div class="card" style="padding:0;overflow:hidden"><img class="slide-preview" src="/demo/signature-african/slide-01.png" alt="First slide of 5 rules for posts that travel" /><div style="padding:16px"><strong>5 rules for posts that travel</strong><p>Signature African · listicle</p></div></div>
+    <div class="card" style="padding:0;overflow:hidden"><img class="slide-preview" src="/demo/editorial-clean/slide-01.png" alt="First slide of The draft nobody wanted to write" /><div style="padding:16px"><strong>The draft nobody wanted to write</strong><p>Editorial Clean · story</p></div></div>
+    <div class="card" style="padding:0;overflow:hidden"><img class="slide-preview" src="/demo/mono-terminal/slide-01.png" alt="First slide of Ship a side project in one weekend" /><div style="padding:16px"><strong>Ship a side project in one weekend</strong><p>Mono Terminal · how-to</p></div></div>
+  </div>
+</section>
+
+<section>
+  <h2>MVP access</h2>
+  <div class="card" style="margin-top:16px">
+    <p>Storyloom is in development and being tested with hackathon participants. Start with a template for free, or use available credits to generate a carousel with AI. Commercial plans and pricing have not been finalized.</p>
+    <p style="color:var(--muted);margin-top:8px;font-size:13px">Template-first creation does not call the model. AI generation uses one credit.</p>
+    <a href="/studio" class="btn btn-primary" style="margin-top:16px">Try the MVP</a>
+  </div>
+</section>
+
+<section class="faq">
+  <h2>Questions</h2>
+  <div style="margin-top:16px">
+    <details><summary>What can I use as a starting point?</summary><p style="color:var(--muted);margin-top:8px">Pasted text or an article URL.</p></details>
+    <details><summary>Which platforms and formats are supported?</summary><p style="color:var(--muted);margin-top:8px">Output is 4:5, 1080×1350, 5–10 slides. Labeled for LinkedIn and Instagram.</p></details>
+    <details><summary>Can I edit the slides after generation?</summary><p style="color:var(--muted);margin-top:8px">Yes. Edit text in the editor or directly on the preview, reorder, add/remove slides, undo/redo.</p></details>
+    <details><summary>What can I download?</summary><p style="color:var(--muted);margin-top:8px">PNGs per slide, a combined PDF, or a ZIP archive.</p></details>
+    <details><summary>Does starting from a template use AI credits?</summary><p style="color:var(--muted);margin-top:8px">No. Template path is free and makes no AI call. Only Generate from text/link uses one credit.</p></details>
+    <details><summary>Does Storyloom generate images?</summary><p style="color:var(--muted);margin-top:8px">No. Current output is text and layout via HTML/CSS templates. No AI illustration.</p></details>
+  </div>
+</section>
+
+<div class="cta-lime">
+  <p style="font-size:11px;letter-spacing:0.12em;color:var(--lime-text);opacity:.7">HELP SHAPE THE NEXT VERSION</p>
+  <h2>TRY THE<br>MVP.</h2>
+  <p style="max-width:520px;margin:16px auto;color:var(--lime-text)">Turn an idea into a carousel and share feedback while the product is in development.</p>
+  <a href="/studio" class="btn" style="background:#000;color:#fff;border-color:#000">Try the MVP →</a>
+</div>
+
+<footer>STORYLOOM / 2026 — MVP in development · Testing on Render</footer>
+
+</body>
+</html>

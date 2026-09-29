@@ -16,15 +16,17 @@ once. It takes about five minutes and costs nothing on the Supabase free tier.
 
 ## 2. Run or rerun the migration
 
-Open **SQL Editor -> New query**, paste the entire contents of
-[`supabase/migrations/0001_auth_credits_decks.sql`](../supabase/migrations/0001_auth_credits_decks.sql),
-and run it.
+Open **SQL Editor -> New query** and run both migrations in order:
 
-The migration is safe to rerun on an existing project. It creates or repairs:
+1. [`supabase/migrations/0001_auth_credits_decks.sql`](../supabase/migrations/0001_auth_credits_decks.sql)
+2. [`supabase/migrations/0002_brands_plan.sql`](../supabase/migrations/0002_brands_plan.sql)
+
+Both migrations are safe to rerun on an existing project. Together they create or repair:
 
 - `profiles` - one row per auth user, with `email`, `credits`, `created_at`, and
   `updated_at`.
 - `decks` - one JSON deck per row, owned by a user.
+- `brands` - reusable brand details, plus the `profiles.plan` field.
 - a signup trigger that grants every new user their 10 credits.
 - a backfill step for auth users that already existed before the trigger worked.
 - `ensure_profile`, `spend_credit`, and `add_credit` RPCs.

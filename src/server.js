@@ -393,7 +393,7 @@ app.get('/api/decks', requireUser, requireAccount, guard(async (req, res) => {
 app.get('/api/decks/:id', requireUser, requireAccount, guard(async (req, res) => {
   const row = await decks.get(req.user.id, req.params.id);
   if (!row) return fail(res, 'not_found', 'Deck not found.');
-  res.json({ ok: true, deck: row });
+  res.json({ ok: true, deck: row.deck });
 }));
 
 /** Save a new deck. Validated with the same Ajv instance as everything else. */
@@ -614,6 +614,9 @@ app.get('/api/health', async (_req, res) => {
 // The iframe loads /templates/carousel.html — the same bytes Puppeteer opens
 // from disk. Serving it read-only rather than copying it into public/ is what
 // keeps preview and export from drifting.
+app.get('/', (_req, res) => res.sendFile(join(ROOT, 'public', 'landing.html')));
+app.get('/studio', (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
+app.get('/signin', (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
 app.use('/templates', express.static(join(ROOT, 'templates')));
 app.use('/out', express.static(join(ROOT, 'out')));
 app.use('/fixtures', express.static(join(ROOT, 'fixtures')));

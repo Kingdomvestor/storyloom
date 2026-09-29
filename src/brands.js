@@ -44,9 +44,8 @@ export async function list(userId) {
     .eq('user_id', userId)
     .order('is_default', { ascending: false })
     .order('updated_at', { ascending: false });
-  // 42P01 is "relation does not exist" — say which migration is missing rather
-  // than letting a raw Postgres error surface in the Brand tab.
-  if (error?.code === '42P01') {
+  // Missing relations may surface as a Postgres or PostgREST schema-cache code.
+  if (error?.code === '42P01' || error?.code === 'PGRST205') {
     throw new Error('brands table is missing — run supabase/migrations/0002_brands_plan.sql');
   }
   if (error) throw new Error(`brands.list: ${error.message}`);

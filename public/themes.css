@@ -1,0 +1,132 @@
+html[data-theme="light"] .topbar {
+  border-color: var(--line);
+}
+
+html[data-theme="light"] .composer {
+  background: linear-gradient(180deg, #FFFFFF, #F2F1EB);
+}
+
+html[data-theme="light"] .seg,
+html[data-theme="light"] .peek,
+html[data-theme="light"] textarea,
+html[data-theme="light"] input[type="url"],
+html[data-theme="light"] input[type="text"],
+html[data-theme="light"] .titlebox,
+html[data-theme="light"] .tagbox {
+  background-color: var(--field);
+}
+
+html[data-theme="light"] .seg button.on {
+  color: var(--text);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .04) inset;
+}
+
+html[data-theme="light"] textarea:focus,
+html[data-theme="light"] input:focus {
+  border-color: color-mix(in srgb, var(--gold) 58%, transparent);
+}
+
+html[data-theme="light"] .knob label .hint,
+html[data-theme="light"] .extra summary .hint,
+html[data-theme="light"] .f .cnt,
+html[data-theme="light"] .f .why,
+html[data-theme="light"] .switchrow small,
+html[data-theme="light"] .sheet-foot {
+  color: var(--hint);
+}
+
+html[data-theme="light"] .stylecard:hover,
+html[data-theme="light"] .gcard:hover,
+html[data-theme="light"] .rthumb:hover,
+html[data-theme="light"] .btn-ghost:hover,
+html[data-theme="light"] .iconbtn:hover,
+html[data-theme="light"] .rbtn:hover:not(:disabled) {
+  border-color: var(--hover-line);
+}
+
+html[data-theme="light"] .btn-go {
+  background: var(--gold);
+  color: #11120A;
+  box-shadow: 0 6px 18px -10px color-mix(in srgb, var(--gold) 55%, transparent);
+}
+
+html[data-theme="light"] .btn-go .cost {
+  background: color-mix(in srgb, #11120A 12%, transparent);
+}
+
+html[data-theme="light"] .nokey {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  border-color: color-mix(in srgb, var(--amber) 28%, transparent);
+}
+
+html[data-theme="light"] .err,
+html[data-theme="light"] .tag.dud,
+html[data-theme="light"] .warnlist li.bad {
+  color: var(--red);
+}
+
+html[data-theme="light"] .err {
+  background: color-mix(in srgb, var(--red) 7%, transparent);
+  border-color: color-mix(in srgb, var(--red) 28%, transparent);
+}
+
+html[data-theme="light"] .working .bar {
+  background: var(--track);
+}
+
+html[data-theme="light"] .gcard .shot,
+html[data-theme="light"] .rthumb {
+  background: var(--canvas);
+}
+
+html[data-theme="light"] .gcard .use {
+  background: linear-gradient(0deg, color-mix(in srgb, var(--ink) 96%, transparent), transparent);
+}
+
+html[data-theme="light"] .stage {
+  background: radial-gradient(60% 50% at 50% 0%, color-mix(in srgb, var(--gold) 6%, transparent), transparent 70%), var(--canvas);
+}
+
+html[data-theme="light"] .stage-frame {
+  box-shadow: 0 24px 54px -26px rgba(30, 28, 20, .3), 0 0 0 1px var(--line);
+}
+
+html[data-theme="light"] .rthumb .n {
+  background: color-mix(in srgb, var(--ink) 88%, transparent);
+  color: var(--text);
+}
+
+html[data-theme="light"] .tag {
+  border-color: color-mix(in srgb, var(--gold) 35%, transparent);
+}
+
+html[data-theme="light"] .tag.dud {
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  border-color: color-mix(in srgb, var(--red) 28%, transparent);
+}
+
+html[data-theme="light"] .sw-toggle.on {
+  background: color-mix(in srgb, var(--gold) 32%, transparent);
+}
+
+html[data-theme="light"] .warnlist li {
+  background: color-mix(in srgb, var(--amber) 7%, transparent);
+  border-left-color: color-mix(in srgb, var(--amber) 52%, transparent);
+}
+
+html[data-theme="light"] .warnlist li.bad {
+  background: color-mix(in srgb, var(--red) 6%, transparent);
+  border-left-color: color-mix(in srgb, var(--red) 48%, transparent);
+}
+
+html[data-theme="light"] .rail,
+html[data-theme="light"] .panel-body,
+html[data-theme="light"] .peek,
+html[data-theme="light"] .sheet-card {
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+html[data-theme="light"] .sheet {
+  background: rgba(10, 10, 11, .48);
+}
