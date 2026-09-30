@@ -325,8 +325,8 @@ async function openSavedDeck(id) {
 function wireDashboard() {
   $('#newDeckBtn').onclick = () => {
     state.deckId = null;
-    loadGallery();                 // load templates with the signed-in token
     document.documentElement.dataset.view = 'compose';
+    showNewDeckChoice();
   };
 }
 
@@ -684,7 +684,46 @@ function buildStylePicker() {
 }
 
 // ==================================================================== COMPOSE
+function showNewDeckChoice() {
+  const choice = $('#newDeckChoice');
+  const composer = $('#composer');
+  const gallery = $('#gallery');
+  if (!choice || !composer || !gallery) return;
+  choice.hidden = false;
+  composer.hidden = true;
+  gallery.hidden = true;
+}
+
+function beginNewDeckChoice(mode) {
+  const choice = $('#newDeckChoice');
+  const composer = $('#composer');
+  const gallery = $('#gallery');
+  if (!choice || !composer || !gallery) return;
+  choice.hidden = true;
+  if (mode === 'template') {
+    composer.hidden = true;
+    gallery.hidden = false;
+    loadGallery();
+    return;
+  }
+  composer.hidden = false;
+  gallery.hidden = true;
+  $('#sourceText').focus();
+}
+
 function wireCompose() {
+  $$('#newDeckChoice [data-start-mode]').forEach((b) => {
+    b.onclick = () => beginNewDeckChoice(b.dataset.startMode);
+  });
+  $('#newDeckBack').onclick = async () => {
+    if (state.user) {
+      document.documentElement.dataset.view = 'dashboard';
+      await loadDashboard();
+      return;
+    }
+    document.documentElement.dataset.view = 'auth';
+  };
+
   // source tabs
   $$('.seg-source button').forEach((b) => {
     b.onclick = () => {

@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet" />
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
 <link href="/app.css" rel="stylesheet" />
 <link href="/themes.css" rel="stylesheet" />
@@ -85,8 +86,30 @@
 <main class="view view-compose" id="viewCompose">
   <div class="hero">
     <h1>Turn a thought into a <b>carousel</b>.</h1>
-    <p>Paste text or a link. You get 5–10 editable slides at 1080&times;1350 — the preview <em>is</em> the export.</p>
+    <p>Paste text or a link. You get 5–10 editable slides at 1080&times;1350 <br> Edit to <em>your</em> satisfaction.</p>
   </div>
+
+  <section class="new-deck-choice" id="newDeckChoice" hidden>
+    <div class="choice-header">
+      <p class="dash-eyebrow">Start a new carousel</p>
+      <h2>Pick your starting point</h2>
+    </div>
+    <div class="choice-grid">
+      <button class="choice-card" type="button" data-start-mode="generate">
+        <span class="choice-badge">AI</span>
+        <h3>Generate from text or a link</h3>
+        <p>Paste a draft, article, a link, or rough idea and let Storyloom turn it into a carousel.</p>
+      </button>
+      <button class="choice-card" type="button" data-start-mode="template">
+        <span class="choice-badge choice-badge-soft">Template</span>
+        <h3>Start from a free template</h3>
+        <p>Use a proven structure and swap in your words without a model call.</p>
+      </button>
+    </div>
+    <div class="choice-actions">
+      <button class="btn-ghost" id="newDeckBack" type="button">Back to My decks</button>
+    </div>
+  </section>
 
   <section class="composer" id="composer">
     <div class="seg seg-source" role="tablist" aria-label="Source type">
@@ -149,8 +172,6 @@
       <p><span id="workingMsg">Reading your text…</span><span class="clock" id="workingClock"></span></p>
     </div>
   </section>
-
-  <div class="orline"><span>or start from a template — free, unlimited, no model call</span></div>
 
   <section class="gallery" id="gallery"></section>
 </main>
