@@ -48,6 +48,12 @@ test('authoring routes stay OPEN in degraded mode (Week A still works)', async (
   assert.equal(defaults.body.ok, true);
   assert.ok(Array.isArray(defaults.body.decks));
 
+  const templates = await call('/api/templates');
+  assert.equal(templates.status, 200);
+  assert.equal(templates.body.ok, true);
+  assert.equal(templates.body.decks.length, defaults.body.decks.length);
+  assert.ok(templates.body.decks.every((deck) => deck.source === 'template'));
+
   // Generate is reachable (not auth-gated); with no input it short-circuits at
   // no_input BEFORE any model or credit logic, so this is hermetic re: API keys.
   const gen = await call('/api/generate', {
@@ -55,6 +61,14 @@ test('authoring routes stay OPEN in degraded mode (Week A still works)', async (
   });
   assert.notEqual(gen.body.kind, 'unauthorized');
   assert.equal(gen.body.kind, 'no_input');
+
+  const unavailableStyle = await call('/api/generate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: 'A source paragraph.', style_id: 'unpublished-style' }),
+  });
+  assert.equal(unavailableStyle.status, 400);
+  assert.equal(unavailableStyle.body.kind, 'bad_input');
 });
 
 test('account routes are hard-gated → 401 without a user', async () => {
@@ -63,4 +77,10 @@ test('account routes are hard-gated → 401 without a user', async () => {
     assert.equal(status, 401, `${p} should be 401`);
     assert.equal(body.kind, 'unauthorized');
   }
+
+  const { status, body } = await call('/api/templates', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.equal(status, 401);
+  assert.equal(body.kind, 'unauthorized');
 });

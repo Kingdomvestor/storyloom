@@ -52,6 +52,8 @@ const state = {
   dirty: false,
   defaultBrand: null,   // the user's default footer, applied to new decks
   brands: null,         // the brand library, loaded when the Brand tab first opens
+  styleLibrary: [],
+  isAdmin: false,
   compose: { src: 'text', slides: 'auto', narrative: 'listicle', style: 'signature-african', platform: 'linkedin' },
 };
 
@@ -126,6 +128,7 @@ async function applySession(session, { navigate = true } = {}) {
   }
   $('#userEmail').textContent = state.user.email;
   await loadDashboard();                        // sets credits + grid
+  if (sb) await loadStyleLibrary();
   if (state.user && navigate) document.documentElement.dataset.view = 'dashboard';
 }
 
@@ -235,8 +238,11 @@ function wireAuth() {
 
 async function loadDashboard() {
   const r = await api('/api/decks');
+  const empty = $('#dashEmpty');
+  const grid = $('#deckGrid');
   if (!r.ok) {
-    const empty = $('#dashEmpty');
+    grid.innerHTML = '';
+    empty.classList.add('error');
     empty.hidden = false;
     empty.textContent = `Could not load decks: ${r.message}`;
     return;
@@ -245,20 +251,31 @@ async function loadDashboard() {
   state.plan = r.plan ?? 'free';
   state.defaultBrand = r.defaultBrand ?? null;
   renderCredits();
-  const grid = $('#deckGrid');
   grid.innerHTML = '';
-  $('#dashEmpty').textContent = 'No decks yet. Hit New carousel to make your first.';
-  $('#dashEmpty').hidden = r.decks.length > 0;
+  empty.classList.remove('error');
+  empty.textContent = 'No saved carousels yet. Create one with AI or start from a free template.';
+  empty.hidden = r.decks.length > 0;
   for (const d of r.decks) grid.appendChild(deckCard(d));
 }
 
 function deckCard(d) {
   const card = document.createElement('article');
   card.className = 'deckcard';
-  card.onclick = () => openSavedDeck(d.id);
 
-  const h = document.createElement('h3');
-  h.textContent = d.title || 'Untitled';
+  const heading = document.createElement('h2');
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'deck-open';
+  open.setAttribute('aria-label', `Open ${d.title || 'Untitled'}`);
+  open.onclick = () => openSavedDeck(d.id);
+  const title = document.createElement('span');
+  title.className = 'deck-open-title';
+  title.textContent = d.title || 'Untitled';
+  const openLabel = document.createElement('span');
+  openLabel.className = 'deck-open-cta';
+  openLabel.textContent = 'Open carousel';
+  open.append(title, openLabel);
+  heading.appendChild(open);
 
   const meta = document.createElement('div');
   meta.className = 'meta';
@@ -267,20 +284,35 @@ function deckCard(d) {
   badge.dataset.src = d.source;
   badge.textContent = d.source === 'ai' ? 'AI' : 'Template';
   const when = document.createElement('span');
-  when.textContent = new Date(d.updated_at).toLocaleDateString();
+  const updatedAt = new Date(d.updated_at);
+  when.textContent = Number.isNaN(updatedAt.getTime())
+    ? ''
+    : `Edited ${updatedAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
   meta.append(badge, when);
 
   const del = document.createElement('button');
+  del.type = 'button';
   del.className = 'linkbtn del';
-  del.textContent = 'Delete';
+  del.setAttribute('aria-label', `Delete ${d.title || 'Untitled'}`);
+  del.title = `Delete ${d.title || 'Untitled'}`;
+  del.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3"/></svg>';
   del.onclick = async (e) => {
     e.stopPropagation();
     if (!confirm(`Delete "${d.title || 'Untitled'}"?`)) return;
     const r = await api('/api/decks/' + d.id, null, { method: 'DELETE' });
-    if (r.ok) card.remove();
+    if (r.ok) await loadDashboard();
+    else {
+      const empty = $('#dashEmpty');
+      empty.classList.add('error');
+      empty.hidden = false;
+      empty.textContent = `Could not delete deck: ${r.message}`;
+    }
   };
 
-  card.append(h, meta, del);
+  const footer = document.createElement('div');
+  footer.className = 'deckcard-foot';
+  footer.append(meta, del);
+  card.append(heading, footer);
   return card;
 }
 
@@ -548,6 +580,10 @@ async function boot() {
     (v) => (state.compose.platform = v), (p) => (p === 'linkedin' ? 'LinkedIn' : 'Instagram'));
   buildStylePicker();
 
+  if (sb) {
+    await loadStyleLibrary();
+  }
+
   wireCompose();
   wireEditor();
   wireAuth();
@@ -612,10 +648,24 @@ function buildSeg(sel, values, current, onPick, fmt = (v) => v) {
  * A real 1080×1350 iframe per style would be six more documents on the landing
  * screen for information three rectangles already carry.
  */
+async function loadStyleLibrary() {
+  if (!sb) return;
+  const r = await api('/api/styles');
+  if (!r.ok) return;
+  state.isAdmin = Boolean(r.isAdmin);
+  state.styleLibrary = Array.isArray(r.styles) ? r.styles : [];
+  const styles = [...new Set([...(state.meta?.styles ?? []), ...state.styleLibrary.map((s) => s.slug || s.id)])];
+  if (state.meta) state.meta.styles = styles;
+  buildStylePicker();
+  if (document.documentElement.dataset.view === 'editor' && state.deck) buildStyleTab();
+}
+
 function buildStylePicker() {
   const host = $('#stylePicker');
+  if (!host || !state.meta) return;
+  const styles = Array.isArray(state.meta.styles) ? state.meta.styles : [];
   host.innerHTML = '';
-  for (const s of state.meta.styles) {
+  for (const s of styles) {
     const card = document.createElement('button');
     card.className = 'stylecard' + (s === state.compose.style ? ' on' : '');
     card.setAttribute('aria-pressed', String(s === state.compose.style));
@@ -812,12 +862,12 @@ async function generate() {
     return;
   }
   if (typeof result.credits === 'number') { state.credits = result.credits; renderCredits(); }
-  openEditor(result.deck, result);
+  openEditor(result.deck, { ...result, autoSave: true });
 }
 
 // ---------------------------------------------------------------- gallery (B)
 async function loadGallery() {
-  const r = await api('/api/defaults');
+  const r = await api('/api/templates');
   const host = $('#gallery');
   host.innerHTML = '';
   if (!r.ok) return;
@@ -886,6 +936,7 @@ function openEditor(deck, info = {}) {
   resetHistory();
   setAutoState('', '');
   revalidate({ passive: true });   // opening a deck is not an edit of it
+  if (info.autoSave) markDirty();
 }
 
 function wireEditor() {
@@ -1578,6 +1629,7 @@ function renderWarnings(host) {
 // --------------------------------------------------------------- style tab
 function buildStyleTab() {
   const host = $('#tabStyle');
+  if (!host || !state.meta) return;
   host.innerHTML = '';
 
   const head = document.createElement('div');
@@ -1587,7 +1639,8 @@ function buildStyleTab() {
 
   const grid = document.createElement('div');
   grid.className = 'styles';
-  for (const s of state.meta.styles) {
+  const styles = Array.isArray(state.meta.styles) ? state.meta.styles : [];
+  for (const s of styles) {
     const card = document.createElement('button');
     card.className = 'stylecard' + (s === state.deck.style_id ? ' on' : '');
     card.setAttribute('aria-pressed', String(s === state.deck.style_id));
@@ -1598,16 +1651,150 @@ function buildStyleTab() {
     nm.textContent = label(s);
     card.appendChild(nm);
     card.onclick = async () => {
+      const selectedStyle = state.styleLibrary.find((style) => (style.slug || style.id) === s);
       state.deck.style_id = s;
+      if (selectedStyle && !selectedStyle.is_system) state.deck.theme = structuredClone(selectedStyle.settings || {});
+      else delete state.deck.theme;
       selectOne($$('.stylecard', grid), card);
-      // Same JSON, different stylesheet — this is the restyle-is-free claim,
-      // and it is the one interaction in the app that has to feel instant.
       await show($('#preview'), state.deck, state.index);
       refreshAllThumbs();
     };
     grid.appendChild(card);
   }
   host.appendChild(grid);
+
+  if (state.isAdmin) {
+    const adminWrap = document.createElement('div');
+    adminWrap.className = 'style-admin';
+
+    const adminHead = document.createElement('div');
+    adminHead.className = 'subhead';
+    adminHead.textContent = 'Custom styles';
+    adminWrap.appendChild(adminHead);
+
+    const library = document.createElement('div');
+    library.className = 'style-library';
+    const saved = Array.isArray(state.styleLibrary) ? state.styleLibrary : [];
+    if (!saved.length) {
+      const empty = document.createElement('div');
+      empty.className = 'style-library-empty';
+      empty.textContent = 'No published styles yet. Create the first one below.';
+      library.appendChild(empty);
+    } else {
+      for (const style of saved) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'style-library-item';
+        item.innerHTML = `
+          <span class="style-swatch" style="--style-bg:${style.settings?.background_hex || '#0f172a'}; --style-accent:${style.settings?.accent_hex || '#d7a35f'}; --style-fg:${style.settings?.foreground_hex || '#f7f3ee'}"></span>
+          <span class="style-copy">
+            <strong>${(style.name || style.slug || 'Custom style').replace(/-/g, ' ')}</strong>
+            <small>${style.slug || style.id}</small>
+          </span>
+        `;
+        item.onclick = async () => {
+          state.deck.style_id = style.slug || style.id;
+          state.deck.theme = style.settings || {};
+          await show($('#preview'), state.deck, state.index);
+          refreshAllThumbs();
+        };
+        library.appendChild(item);
+      }
+    }
+    adminWrap.appendChild(library);
+
+    const form = document.createElement('form');
+    form.className = 'style-form';
+    form.innerHTML = `
+      <div class="style-form-grid">
+        <label>Name<input name="name" placeholder="Warm editorial" required /></label>
+        <label>Slug<input name="slug" placeholder="warm-editorial" required /></label>
+      </div>
+      <div class="style-form-grid compact">
+        <label>Background<input name="background_hex" type="color" value="#0f172a" /></label>
+        <label>Surface<input name="surface_hex" type="color" value="#1f2937" /></label>
+        <label>Foreground<input name="foreground_hex" type="color" value="#f8fafc" /></label>
+        <label>Accent<input name="accent_hex" type="color" value="#d7a35f" /></label>
+      </div>
+      <label>Font family<input name="font_pair" value="Poppins, sans-serif" /></label>
+      <button type="submit" class="btn-go sm">Publish style</button>
+    `;
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const body = {
+        name: String(fd.get('name') ?? '').trim(),
+        slug: String(fd.get('slug') ?? '').trim(),
+        status: 'published',
+        settings: {
+          background_hex: String(fd.get('background_hex') ?? '#0f172a'),
+          surface_hex: String(fd.get('surface_hex') ?? '#1f2937'),
+          foreground_hex: String(fd.get('foreground_hex') ?? '#f8fafc'),
+          accent_hex: String(fd.get('accent_hex') ?? '#d7a35f'),
+          font_pair: String(fd.get('font_pair') ?? 'Poppins, sans-serif').trim(),
+        },
+      };
+      if (!body.name || !body.slug) return;
+      const r = await api('/api/styles', body);
+      if (!r.ok) {
+        $('#stageNote').textContent = `Style save failed — ${r.message}`;
+        return;
+      }
+      form.reset();
+      await loadStyleLibrary();
+      if (state.deck) {
+        state.deck.style_id = r.style.slug || r.style.id || state.deck.style_id;
+        state.deck.theme = r.style.settings || state.deck.theme || {};
+        await show($('#preview'), state.deck, state.index);
+        refreshAllThumbs();
+      }
+    };
+    adminWrap.appendChild(form);
+
+    const templateHead = document.createElement('div');
+    templateHead.className = 'subhead';
+    templateHead.textContent = 'Publish current deck as template';
+    adminWrap.appendChild(templateHead);
+
+    const templateForm = document.createElement('form');
+    templateForm.className = 'style-form template-form';
+    templateForm.innerHTML = `
+      <label>Template name<input name="name" maxlength="60" placeholder="A name for the gallery" required /></label>
+      <label>Slug<input name="slug" maxlength="40" placeholder="generated-from-name" /></label>
+      <label>Description<textarea name="description" maxlength="220" rows="2"></textarea></label>
+      <button type="submit" class="btn-go sm">Publish current deck</button>
+    `;
+    templateForm.onsubmit = async (e) => {
+      e.preventDefault();
+      const submit = $('button[type="submit"]', templateForm);
+      const fd = new FormData(templateForm);
+      const name = String(fd.get('name') ?? '').trim();
+      const deck = structuredClone(state.deck);
+      deck.title = name;
+      deck.source = 'template';
+      submit.disabled = true;
+      try {
+        const r = await api('/api/templates', {
+          name,
+          slug: String(fd.get('slug') ?? '').trim(),
+          description: String(fd.get('description') ?? '').trim(),
+          deck,
+        });
+        if (!r.ok) {
+          $('#stageNote').textContent = `Template publish failed — ${r.message}`;
+          return;
+        }
+        templateForm.reset();
+        $('#stageNote').textContent = `Published “${r.template.name}” to the starter gallery.`;
+      } catch (error) {
+        $('#stageNote').textContent = `Template publish failed — ${error.message || 'Network request failed.'}`;
+      } finally {
+        submit.disabled = false;
+      }
+    };
+    adminWrap.appendChild(templateForm);
+    host.appendChild(adminWrap);
+  }
 
   const pHead = document.createElement('div');
   pHead.className = 'subhead';

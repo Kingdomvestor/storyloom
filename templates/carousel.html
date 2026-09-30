@@ -93,6 +93,17 @@
     font-size: 18px; letter-spacing: .04em; opacity: .5;
   }
 
+  /* Generic theme variables used by DB-backed custom styles. Built-in skin rules
+     below override these values when the deck matches a built-in style ID. */
+  [data-style] #slide {
+    --bg: #101A33;
+    --fg: #F0E7D4;
+    --accent: #D9A23B;
+    --cta-fg: #101A33;
+    --surface: rgba(255,255,255,.08);
+    font-family: Lato, system-ui, sans-serif;
+  }
+
   /* =====================================================================
      SKINS — same layout, three token sets + light per-skin flourishes.
      Selected by <html data-style="…">.
@@ -339,7 +350,23 @@
     root.dataset.ready = "false";
     index = Math.max(0, Math.min(i, deck.slides.length - 1));
     const s = deck.slides[index];
-    root.setAttribute("data-style", deck.style_id || "signature-african");
+    const styleId = deck.style_id || "signature-african";
+    const theme = deck.theme || {};
+    root.setAttribute("data-style", styleId);
+
+    for (const [property, value] of [
+      ["--bg", theme.background_hex],
+      ["--fg", theme.foreground_hex],
+      ["--surface", theme.surface_hex],
+      ["--accent", theme.accent_hex],
+      ["--cta-fg", theme.foreground_hex],
+    ]) {
+      $slide.style.removeProperty(property);
+      if (value) $slide.style.setProperty(property, value);
+    }
+    $slide.style.removeProperty("font-family");
+    if (theme.font_pair) $slide.style.fontFamily = theme.font_pair;
+
     $slide.innerHTML = slideHTML(s, s.highlight_words);
     autofitHeading();
     autofitBody();

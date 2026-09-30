@@ -32,6 +32,8 @@ import { hasSupabase, publicConfig, getUser } from './supabase.js';
 import * as credits from './credits.js';
 import * as decks from './decks.js';
 import * as brands from './brands.js';
+import * as styleStore from './styles.js';
+import * as starterTemplates from './starter-templates.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..');
@@ -135,6 +137,18 @@ function requireAccount(req, res, next) {
     hasSupabase() ? 'Sign in to continue.' : 'Accounts are not configured on this server.');
 }
 
+async function requireAdmin(req, res, next) {
+  if (!req.user) return fail(res, 'unauthorized', hasSupabase() ? 'Sign in to continue.' : 'Accounts are not configured on this server.');
+  try {
+    const ok = await styleStore.isAdmin(req.user.id);
+    if (!ok) return fail(res, 'unauthorized', 'Only admins can manage styles.');
+    return next();
+  } catch (err) {
+    console.error('admin check failed:', err);
+    return fail(res, 'server_error', 'Could not verify admin access.');
+  }
+}
+
 /** Wrap an async route so a thrown/rejected error becomes a JSON 500, not HTML. */
 const guard = (handler) => (req, res) => handler(req, res).catch((err) => {
   console.error(`${req.method} ${req.path}:`, err);
@@ -154,7 +168,7 @@ app.get('/api/meta', (_req, res) => {
     model: MODEL,
     hasApiKey: Boolean(process.env.GEMINI_API_KEY),
     supabase: publicConfig(),
-    styles: schema.properties.style_id.enum,
+    styles: STYLES,
     narratives: schema.properties.narrative_type.enum,
     platforms: schema.properties.platform.enum,
     slides: { min: schema.properties.slides.minItems, max: schema.properties.slides.maxItems },
@@ -188,6 +202,61 @@ app.get('/api/defaults', requireUser, (req, res) => {
   res.json({ ok: true, decks: allDefaults(brand ? { brand } : {}) });
 });
 
+app.get('/api/templates', requireUser, guard(async (req, res) => {
+  const brand = req.query.name || req.query.handle
+    ? { name: String(req.query.name ?? ''), handle: String(req.query.handle ?? '') }
+    : undefined;
+  const decks = allDefaults(brand ? { brand } : {});
+  const saved = await starterTemplates.listPublished();
+
+  for (const row of saved) {
+    if (!row.deck || typeof row.deck !== 'object' || Array.isArray(row.deck)) continue;
+    const deck = { ...row.deck, title: row.name, source: 'template' };
+    if (validateDeck(deck).valid) decks.push(deck);
+  }
+  res.json({ ok: true, decks });
+}));
+
+app.post('/api/templates', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
+  const body = req.body ?? {};
+  const name = String(body.name ?? '').trim();
+  if (!name || name.length > schema.properties.title.maxLength) {
+    return fail(res, 'bad_input', `Template name must be 1-${schema.properties.title.maxLength} characters.`);
+  }
+  if (!body.deck || typeof body.deck !== 'object' || Array.isArray(body.deck)) {
+    return fail(res, 'bad_deck', 'A valid deck is required.');
+  }
+
+  const deck = { ...body.deck, title: name, source: 'template' };
+  const checked = validateDeck(deck);
+  if (!checked.valid) return fail(res, 'bad_deck', `Invalid template deck: ${checked.errors.join('; ')}`);
+
+  try {
+    const template = await starterTemplates.create(req.user.id, {
+      name,
+      slug: body.slug,
+      description: body.description,
+      deck,
+    });
+    res.json({ ok: true, template });
+  } catch (error) {
+    if (error.code === '23505') return fail(res, 'bad_input', 'That template slug is already in use.');
+    throw error;
+  }
+}));
+
+app.get('/api/styles', requireUser, guard(async (req, res) => {
+  if (!hasSupabase()) return res.json({ ok: true, isAdmin: false, styles: [] });
+  const styles = await styleStore.listPublished();
+  const isAdmin = req.user ? await styleStore.isAdmin(req.user.id) : false;
+  res.json({ ok: true, isAdmin, styles });
+}));
+
+app.post('/api/styles', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
+  const row = await styleStore.create(req.user.id, req.body ?? {});
+  res.json({ ok: true, style: row });
+}));
+
 app.post('/api/extract', requireUser, async (req, res) => {
   const result = await extractArticle(req.body?.url);
   if (!result.ok) return fail(res, result.kind, result.message);
@@ -219,6 +288,17 @@ app.post('/api/generate', requireUser, async (req, res) => {
   }
   if (!text) return fail(res, 'no_input', 'Paste some text or a link first.');
 
+  const styleId = String(body.style_id ?? STYLES[0]);
+  let selectedStyle;
+  try {
+    selectedStyle = await styleStore.getPublishedBySlug(styleId);
+  } catch (error) {
+    console.error('style lookup failed:', error);
+    return fail(res, 'server_error', 'Could not load that style. Try again.');
+  }
+  if (!selectedStyle) return fail(res, 'bad_input', 'Choose a published style before generating.');
+  const theme = selectedStyle.is_system ? undefined : selectedStyle.settings;
+
   // Credits: spend one before the model call, refund it if generation fails.
   // Only when accounts are on — degraded mode keeps the Week A flow free.
   let remaining = null;
@@ -239,10 +319,11 @@ app.post('/api/generate', requireUser, async (req, res) => {
     text,
     slide_count: body.slide_count ?? 'auto',
     narrative_type: body.narrative_type,
-    style_id: body.style_id,
+    style_id: styleId,
     platform: body.platform,
     watermark: body.watermark,
     brand: body.brand,
+    theme,
     instructions: body.instructions,
   });
   const seconds = Number(process.hrtime.bigint() - started) / 1e9;

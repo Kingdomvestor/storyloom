@@ -70,11 +70,15 @@
 <!-- ============================================================ DASHBOARD -->
 <main class="view view-dashboard" id="viewDashboard">
   <div class="dashhead">
-    <h1>My decks</h1>
+    <div class="dashintro">
+      <p class="dash-eyebrow">YOUR WORKSPACE</p>
+      <h1>My decks</h1>
+      <p class="dashsub">Pick up a carousel or start a new one.</p>
+    </div>
     <button class="btn-go sm" id="newDeckBtn">+ New carousel</button>
   </div>
-  <p class="dashempty" id="dashEmpty" hidden>No decks yet. Hit <b>New carousel</b> to make your first.</p>
-  <section class="deckgrid" id="deckGrid"></section>
+  <p class="dashempty" id="dashEmpty" role="status" aria-live="polite" hidden></p>
+  <section class="deckgrid" id="deckGrid" aria-label="Saved carousels"></section>
 </main>
 
 <!-- ============================================================== COMPOSE -->

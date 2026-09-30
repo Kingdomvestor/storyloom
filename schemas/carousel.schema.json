@@ -10,7 +10,7 @@
     "format": { "const": "carousel" },
     "platform": { "enum": ["linkedin", "instagram"] },
     "aspect_ratio": { "enum": ["4:5"] },
-    "style_id": { "enum": ["signature-african", "editorial-clean", "mono-terminal"] },
+    "style_id": { "type": "string", "pattern": "^[a-z0-9-]+$", "minLength": 1, "maxLength": 40 },
     "narrative_type": {
       "enum": ["listicle", "how-to", "story", "myth-bust", "case-study", "manual"]
     },
@@ -23,6 +23,9 @@
       "properties": {
         "palette": { "type": "string", "maxLength": 40 },
         "accent_hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "background_hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "surface_hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "foreground_hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
         "font_pair": { "type": "string", "maxLength": 40 }
       }
     },
