@@ -155,7 +155,7 @@ code {
 .theme-toggle svg { display: block; width: 17px; height: 17px; }
 
 @media (max-width: 760px) {
-  .topbar { padding: 10px 14px; }
+  .topbar { width: 100%; max-width: none; min-height: 56px; padding: 8px 14px; }
   .topbar-right { gap: 6px; }
   .topbar .pill { height: 30px; padding: 0 8px; font-size: 11px; }
   .topbar .email, .topbar .pill-quiet { display: none !important; }
@@ -168,6 +168,13 @@ code {
   .topbar #modelPill { display: none; }
   .topbar #dashLink { padding: 0 8px; }
   .topbar .linkbtn.acct { padding: 7px 8px; }
+}
+@media (max-width: 360px) {
+  .topbar { gap: 6px; padding-inline: 6px; }
+  .topbar .brand { gap: 5px; font-size: 11px; }
+  .topbar .brand .mark { width: 18px; height: 18px; }
+  .topbar-right { gap: 3px; }
+  .topbar .pill { padding-inline: 6px; }
 }
 
 /* ======================================================== COMPOSE VIEW */
@@ -937,6 +944,47 @@ textarea:focus, input:focus {
   .dashhead { align-items: flex-start; flex-direction: column; gap: 16px; }
   .dashhead > .btn-go { width: 100%; }
   .deckgrid { grid-template-columns: 1fr; }
+
+  .view-auth { padding: 36px 16px 56px; }
+  .authcard { padding: 24px 20px; border-radius: 12px; }
+
+  .view-compose { padding: 36px 12px 56px; }
+  .hero { margin-bottom: 30px; }
+  .hero p { font-size: 14.5px; }
+  .hero p br { display: none; }
+  .composer { padding: 14px; border-radius: 14px; }
+  .urlrow { flex-direction: column; }
+  .urlrow input { min-width: 0; }
+  #peekBtn { width: 100%; height: 40px; }
+  .knobs { gap: 14px 12px; }
+  .styles { max-width: none; gap: 8px; }
+  .gallery { grid-template-columns: 1fr; }
+
+  .editbar {
+    height: auto; min-height: 52px; flex-wrap: wrap;
+    gap: 8px; padding: 8px 10px;
+  }
+  #backBtn { flex: 0 0 auto; }
+  .titlebox { min-width: 0; max-width: none; }
+  .editbar-right {
+    order: 3; width: 100%; min-width: 0; margin-left: 0; gap: 8px;
+    overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 3px;
+  }
+  .editbar-right > * { flex: 0 0 auto; }
+  .workspace { height: auto; }
+  .rail {
+    min-height: 120px; padding: 8px; gap: 8px;
+    overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity;
+  }
+  .rthumb { scroll-snap-align: start; }
+  .railfoot {
+    position: sticky; right: 0; bottom: auto; align-self: stretch;
+    flex-direction: column; justify-content: center; margin: 0; padding: 8px;
+    border-left: 1px solid var(--line-soft); background: var(--panel);
+  }
+  .stage { height: min(58svh, 520px); min-height: 360px; padding: 12px; gap: 10px; }
+  .panel { min-height: 560px; }
+  .panel-body { padding: 14px 14px 28px; }
 }
 
 /* header credits pill */
