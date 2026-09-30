@@ -159,6 +159,7 @@ async function handleAuthEvent(event, session) {
 
 function wireAuth() {
   const form = $('#authForm');
+  const resend = $('#authResend');
   form.onsubmit = async (e) => {
     e.preventDefault();
     if (!sb) return;
@@ -169,7 +170,11 @@ function wireAuth() {
     $('#authSubmit').disabled = true;
     const mode = form.dataset.mode;
     const { data, error } = mode === 'signup'
-      ? await sb.auth.signUp({ email, password })
+      ? await sb.auth.signUp({
+        email,
+        password,
+        options: { emailRedirectTo: new URL('/signin', window.location.origin).href },
+      })
       : await sb.auth.signInWithPassword({ email, password });
     $('#authSubmit').disabled = false;
     if (error) {
@@ -182,14 +187,31 @@ function wireAuth() {
     }
     if (mode === 'signup') {
       setAuthMessage('Account created. Check your email to confirm it, then sign in.');
+      resend.hidden = false;
     }
     // success → onAuthStateChange fires applySession → dashboard
+  };
+  resend.onclick = async () => {
+    const email = $('#authEmail').value.trim();
+    resend.disabled = true;
+    const { error } = await sb.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: new URL('/signin', window.location.origin).href },
+    });
+    resend.disabled = false;
+    if (error) {
+      setAuthMessage(error.message, { error: true });
+      return;
+    }
+    setAuthMessage('Confirmation email sent. Check your inbox.');
   };
   $('#authToggle').onclick = () => {
     const to = form.dataset.mode === 'signin' ? 'signup' : 'signin';
     form.dataset.mode = to;
     $('#authErr').hidden = true;
     $('#authMsg').hidden = true;
+    resend.hidden = to !== 'signup';
     $('#authSubmit').textContent = to === 'signup' ? 'Create account' : 'Sign in';
     $('#authToggle').textContent = to === 'signup'
       ? 'Have an account? Sign in' : 'New here? Create an account';
