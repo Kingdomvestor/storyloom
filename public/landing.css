@@ -223,6 +223,19 @@ h1 span { color: var(--lime); }
   text-align: center;
   white-space: nowrap;
 }
+.ticker-track { display: inline-flex; }
+.ticker-copy:nth-child(2) { display: none; }
+@keyframes ticker-marquee { to { transform: translateX(-50%); } }
+@media (max-width: 700px) {
+  .ticker { text-align: left; }
+  .ticker-track {
+    display: flex;
+    width: max-content;
+    animation: ticker-marquee 24s linear infinite;
+  }
+  .ticker-copy { display: block; flex: 0 0 auto; padding-right: 32px; }
+  .ticker-copy:nth-child(2) { display: block; }
+}
 section { width: 100%; margin: 0 auto; padding: 64px 24px; }
 .section-grid { margin-top: 16px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
