@@ -5,7 +5,7 @@ Storyloom runs fine **without** Supabase. It falls back to the single-user flow
 decks. `/api/meta` reports `supabase: null` and the UI hides the account
 controls. That degraded path is covered by `npm test`.
 
-To turn on accounts + one-time free credits (10) + deck persistence, do this
+To turn on accounts + one-time free credits (50) + deck persistence, do this
 once. It takes about five minutes and costs nothing on the Supabase free tier.
 
 ## 1. Create a free project
@@ -31,7 +31,7 @@ Both migrations are safe to rerun on an existing project. Together they create o
 - `brands` - reusable brand details, plus the `profiles.plan` field.
 - `styles` - admin-published visual token sets; the three built-in skins remain available without database rows.
 - `starter_templates` - admin-published, schema-validated starter decks shown beside the built-ins.
-- a signup trigger that grants every new user their 10 credits.
+- a signup trigger that grants every new user their 50 credits.
 - a backfill step for auth users that already existed before the trigger worked.
 - `ensure_profile`, `spend_credit`, and `add_credit` RPCs.
 - owner-only RLS policies.
@@ -78,7 +78,7 @@ npm run verify:supabase
 ```
 
 This creates a throwaway user and checks that the signup trigger creates a
-profile row with the email and 10 credits, that spend/refund are atomic, and
+profile row with the email and 50 credits, that spend/refund are atomic, and
 that deck CRUD is scoped to the owner. It then deletes the throwaway user.
 
 Restart the server (`npm start`) and the account routes are live. Remove the

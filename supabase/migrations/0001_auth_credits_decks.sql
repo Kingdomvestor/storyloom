@@ -6,7 +6,7 @@ create extension if not exists pgcrypto with schema extensions;
 create table if not exists public.profiles (
   id         uuid primary key references auth.users(id) on delete cascade,
   email      text,
-  credits    int  not null default 10 check (credits >= 0),
+  credits    int  not null default 50 check (credits >= 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -32,7 +32,7 @@ on conflict (id) do update
   set email = coalesce(excluded.email, public.profiles.email),
       updated_at = now();
 
--- Every new signup gets a profile row at 10 credits.
+-- Every new signup gets a profile row at 50 credits.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
