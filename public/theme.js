@@ -41,6 +41,17 @@
         apply(root.dataset.theme === 'dark' ? 'light' : 'dark', true);
       });
     }
+
+    const toggleStickyHeaderState = () => {
+      const scrolled = window.scrollY > 8;
+      for (const el of document.querySelectorAll('.nav, .topbar')) {
+        el.classList.toggle('is-scrolled', scrolled);
+      }
+    };
+
+    toggleStickyHeaderState();
+    window.addEventListener('scroll', toggleStickyHeaderState, { passive: true });
+    window.addEventListener('resize', toggleStickyHeaderState);
     apply(root.dataset.theme);
   };
 
