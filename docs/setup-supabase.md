@@ -16,10 +16,12 @@ once. It takes about five minutes and costs nothing on the Supabase free tier.
 
 ## 2. Run or rerun the migration
 
-Open **SQL Editor -> New query** and run both migrations in order:
+Open **SQL Editor -> New query** and run the migrations in order:
 
 1. [`supabase/migrations/0001_auth_credits_decks.sql`](../supabase/migrations/0001_auth_credits_decks.sql)
 2. [`supabase/migrations/0002_brands_plan.sql`](../supabase/migrations/0002_brands_plan.sql)
+3. [`supabase/migrations/0003_styles_admin.sql`](../supabase/migrations/0003_styles_admin.sql)
+4. [`supabase/migrations/0004_starter_templates.sql`](../supabase/migrations/0004_starter_templates.sql)
 
 Both migrations are safe to rerun on an existing project. Together they create or repair:
 
@@ -27,6 +29,8 @@ Both migrations are safe to rerun on an existing project. Together they create o
   `updated_at`.
 - `decks` - one JSON deck per row, owned by a user.
 - `brands` - reusable brand details, plus the `profiles.plan` field.
+- `styles` - admin-published visual token sets; the three built-in skins remain available without database rows.
+- `starter_templates` - admin-published, schema-validated starter decks shown beside the built-ins.
 - a signup trigger that grants every new user their 10 credits.
 - a backfill step for auth users that already existed before the trigger worked.
 - `ensure_profile`, `spend_credit`, and `add_credit` RPCs.

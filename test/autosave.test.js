@@ -72,11 +72,21 @@ test('autosave persists edits made while the first save is in flight', async () 
       if (url.pathname === '/api/meta') {
         const meta = await (await fetch(base + '/api/meta')).json();
         meta.supabase = { url: 'https://unit.test', anonKey: 'test' };
+        meta.hasApiKey = true;
         await respondJson(meta);
         return;
       }
       if (url.pathname === '/api/decks' && request.method() === 'GET') {
-        await respondJson({ ok: true, decks: [], credits: 6, plan: 'free', defaultBrand: null });
+        await respondJson({
+          ok: true,
+          decks: [
+            { id: 'existing-deck', title: 'Saved sample carousel', source: 'ai', updated_at: '2026-09-30T12:00:00.000Z' },
+            { id: 'template-deck', title: 'Template sample carousel', source: 'template', updated_at: '2026-09-29T12:00:00.000Z' },
+          ],
+          credits: 6,
+          plan: 'free',
+          defaultBrand: null,
+        });
         return;
       }
       if (url.pathname === '/api/validate') {
@@ -85,6 +95,14 @@ test('autosave persists edits made while the first save is in flight', async () 
       }
       if (url.pathname === '/api/brands') {
         await respondJson({ ok: true, brands: [] });
+        return;
+      }
+      if (url.pathname === '/api/generate' && request.method() === 'POST') {
+        await respondJson({
+          ok: true,
+          deck: { ...deck, title: 'Generated sample deck', source: 'ai' },
+          credits: 5,
+        });
         return;
       }
       if (url.pathname === '/api/decks' && request.method() === 'POST') {
@@ -115,6 +133,25 @@ test('autosave persists edits made while the first save is in flight', async () 
     return button && getComputedStyle(button).display !== 'none';
   });
   assert.equal(await page.$eval('#brandHome', (link) => link.getAttribute('href')), '/studio');
+  assert.equal(await page.$eval('.deck-open', (button) => button.getAttribute('aria-label')),
+    'Open Saved sample carousel');
+  assert.equal(await page.$eval('.deckcard .del', (button) => button.getAttribute('aria-label')),
+    'Delete Saved sample carousel');
+  assert.equal(await page.$eval('.deckcard .del svg', (icon) => icon.getAttribute('aria-hidden')),
+    'true');
+  const cardFooters = await page.$$eval('.deckcard', (cards) => cards.map((card) => {
+    const footer = card.querySelector('.deckcard-foot');
+    return {
+      source: card.querySelector('.badge-source').textContent,
+      hasDelete: Boolean(footer?.querySelector('.del')),
+      bottomGap: Math.round(card.getBoundingClientRect().bottom - footer.getBoundingClientRect().bottom),
+    };
+  }));
+  assert.deepEqual(cardFooters.map(({ source }) => source), ['AI generated', 'Template']);
+  assert.ok(cardFooters.every(({ hasDelete, bottomGap }) => hasDelete && bottomGap <= 20));
+  await page.setViewport({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  await page.setViewport({ width: 1280, height: 900 });
 
   const deck = {
     format: 'carousel',
@@ -177,4 +214,18 @@ test('autosave persists edits made while the first save is in flight', async () 
   assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), originalTheme);
   await page.goto(base + '/studio');
   await page.waitForFunction(() => document.documentElement.dataset.view === 'dashboard');
+
+  await page.click('#newDeckBtn');
+  await page.waitForFunction(() => document.documentElement.dataset.view === 'compose');
+  await page.$eval('#sourceText', (input) => {
+    input.value = 'A short source to generate a carousel.';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.click('#generateBtn');
+  await page.waitForFunction(() =>
+    document.documentElement.dataset.view === 'editor'
+    && document.querySelector('#deckTitle')?.value === 'Generated sample deck'
+  );
+  await page.waitForFunction(() => document.querySelector('#autostate')?.classList.contains('saved'));
+  assert.deepEqual(writes[2], { method: 'POST', title: 'Generated sample deck' });
 });

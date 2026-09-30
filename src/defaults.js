@@ -137,7 +137,7 @@ const decks = {
   },
 };
 
-export const STYLES = schema.properties.style_id.enum;
+export const STYLES = ['signature-african', 'editorial-clean', 'mono-terminal'];
 
 /**
  * Build a ready-to-edit deck for a style.

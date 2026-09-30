@@ -151,11 +151,12 @@ export function repairDeck(deck) {
     for (const key of Object.keys(allowed)) {
       if (typeof d.theme[key] === 'string') theme[key] = clamp(d.theme[key], allowed[key].maxLength ?? Infinity);
     }
-    // accent_hex must match ^#RRGGBB — recover a bare hex, else drop it
-    if (theme.accent_hex && !/^#[0-9a-fA-F]{6}$/.test(theme.accent_hex)) {
-      const bare = theme.accent_hex.replace(/^#/, '');
-      if (/^[0-9a-fA-F]{6}$/.test(bare)) theme.accent_hex = `#${bare}`;
-      else delete theme.accent_hex;
+    for (const key of ['accent_hex', 'background_hex', 'surface_hex', 'foreground_hex']) {
+      if (theme[key] && !/^#[0-9a-fA-F]{6}$/.test(theme[key])) {
+        const bare = theme[key].replace(/^#/, '');
+        if (/^[0-9a-fA-F]{6}$/.test(bare)) theme[key] = `#${bare}`;
+        else delete theme[key];
+      }
     }
     d.theme = theme;
   }
@@ -171,7 +172,7 @@ export function repairDeck(deck) {
   d.format = 'carousel';
   d.platform = ['linkedin', 'instagram'].includes(d.platform) ? d.platform : 'linkedin';
   d.aspect_ratio = '4:5';
-  d.style_id = schema.properties.style_id.enum.includes(d.style_id) ? d.style_id : 'signature-african';
+  d.style_id = typeof d.style_id === 'string' && d.style_id.trim() ? d.style_id.trim().slice(0, 40) : 'signature-african';
   d.narrative_type = schema.properties.narrative_type.enum.includes(d.narrative_type)
     ? d.narrative_type
     : 'listicle';

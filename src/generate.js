@@ -67,11 +67,12 @@ export const modelChain = (primary = MODEL) => [primary, ...MODEL_FALLBACKS.filt
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 const TEMPERATURE = Number(process.env.GEMINI_TEMPERATURE ?? 0.7);
 const MAX_OUTPUT_TOKENS = Number(process.env.GEMINI_MAX_OUTPUT_TOKENS ?? 16384);
-const TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS ?? 60_000);
+const TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS ?? 20_000);
+const MAX_ATTEMPTS = Math.max(1, Math.min(3, Number.parseInt(process.env.GEMINI_ATTEMPTS ?? '1', 10) || 1));
 
 const MIN_SLIDES = schema.properties.slides.minItems;
 const MAX_SLIDES = schema.properties.slides.maxItems;
-const STYLES = schema.properties.style_id.enum;
+const STYLES = ['signature-african', 'editorial-clean', 'mono-terminal'];
 const NARRATIVES = schema.properties.narrative_type.enum;
 const PLATFORMS = schema.properties.platform.enum;
 
@@ -214,7 +215,7 @@ function unfence(text) {
  * One Gemini call, with retries for transport-level failure only.
  * Returns { ok: true, text, finishReason, usage } or { ok: false, kind, message }.
  */
-async function callOneModel({ system, contents, model, attempts = 3, format = responseSchema }) {
+async function callOneModel({ system, contents, model, attempts = MAX_ATTEMPTS, format = responseSchema }) {
   const key = apiKey();
   if (!key) {
     return {
@@ -331,10 +332,9 @@ const isTimeout = (r) => r.kind === 'network_error' && /timed out/.test(r.messag
 /**
  * One logical call, over as many models as it takes.
  *
- * callOneModel() already retries the same model three times with a widening delay,
- * which is the right answer to a blip. It is the wrong answer to a model that is
- * *saturated* — waiting 1s then 3s on a queue that clears in minutes just spends
- * the user's patience to reach the same 503. So when the model says it is busy, or
+ * callOneModel() retries are configurable; the default is one bounded attempt per
+ * model so a stalled primary does not hold the user for minutes. When the model
+ * says it is busy, or
  * accepts the request and never answers, the next model in the chain gets the same
  * prompt.
  *
@@ -421,7 +421,7 @@ export async function generateDeck(input = {}) {
 
   const opts = {
     platform: PLATFORMS.includes(input.platform) ? input.platform : PLATFORMS[0],
-    style_id: STYLES.includes(input.style_id) ? input.style_id : STYLES[0],
+    style_id: /^[a-z0-9-]{1,40}$/.test(String(input.style_id ?? '')) ? input.style_id : STYLES[0],
     narrative_type: NARRATIVES.includes(input.narrative_type)
       ? input.narrative_type
       : NARRATIVES[0],

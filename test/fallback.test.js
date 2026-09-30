@@ -15,7 +15,6 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 // Both are read at module scope, so they have to be set before the import.
-process.env.GEMINI_RETRY_BASE_MS = '1';          // otherwise 1s + 3s per busy model
 process.env.GEMINI_FALLBACK_MODELS = 'model-b,model-c';
 
 const { generateDeck, MODEL, modelChain } = await import('../src/generate.js');
@@ -66,8 +65,8 @@ test('a busy model hands the prompt to the next one, and the notes say so', asyn
 
   const r = await generateDeck({ text: SOURCE });
   assert.equal(r.ok, true, `generate failed: ${r.kind} — ${r.message}`);
-  // Three attempts on the primary (a 503 might be a blip), then model-b answers.
-  assert.deepEqual(asked, [MODEL, MODEL, MODEL, 'model-b']);
+  // A busy primary immediately hands off rather than spending retries on its queue.
+  assert.deepEqual(asked, [MODEL, 'model-b']);
   assert.ok(r.notes.some((n) => n.includes('was busy') && n.includes('model-b')),
     `no note naming the substitute: ${r.notes.join(' | ')}`);
   assert.equal(r.deck.slides.length, fixture.slides.length);
@@ -80,7 +79,7 @@ test('when every model is busy, the error names them and drops Google\'s wording
   assert.equal(r.ok, false);
   assert.equal(r.kind, 'overloaded', 'must not be reported as a generic http_error');
   assert.match(r.message, /Every model tried is busy \(.*model-c\)/);
-  assert.equal(asked.length, 9, '3 models x 3 attempts');
+  assert.equal(asked.length, 3, 'one attempt for each of three models');
   // The upstream sentence is kept where a developer can find it, not shown.
   assert.ok(r.notes.some((n) => n.includes('high demand')), r.notes.join(' | '));
   assert.ok(r.notes.some((n) => n.includes('tried')), r.notes.join(' | '));
