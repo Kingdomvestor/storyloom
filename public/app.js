@@ -282,7 +282,7 @@ function deckCard(d) {
   const badge = document.createElement('span');
   badge.className = 'badge-source';
   badge.dataset.src = d.source;
-  badge.textContent = d.source === 'ai' ? 'AI' : 'Template';
+  badge.textContent = d.source === 'ai' ? 'AI generated' : 'Template';
   const when = document.createElement('span');
   const updatedAt = new Date(d.updated_at);
   when.textContent = Number.isNaN(updatedAt.getTime())
@@ -958,7 +958,7 @@ function openEditor(deck, info = {}) {
 
   $('#deckTitle').value = deck.title ?? '';
   const src = $('#deckSource');
-  src.textContent = deck.source === 'ai' ? 'AI' : 'Template';
+  src.textContent = deck.source === 'ai' ? 'AI generated' : 'Template';
   src.dataset.src = deck.source;
 
   const note = $('#stageNote');
