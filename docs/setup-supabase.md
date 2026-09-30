@@ -71,6 +71,19 @@ Email** and turn **Confirm email** off. If you leave email confirmation on,
 signup still works, but the app will ask you to confirm the email before you can
 sign in.
 
+When email confirmation is on, open **Authentication -> URL Configuration**:
+
+1. Set **Site URL** to `https://storyloom-8hz9.onrender.com`.
+2. Add `https://storyloom-8hz9.onrender.com/signin` and
+  `http://localhost:3000/signin` to **Redirect URLs**.
+
+Signup and resend use the current site's `/signin` URL, so production links
+return to Render and local test links return to localhost. Add any custom domain
+here as well. On the signup screen, **Resend confirmation email** can send a
+fresh link for an existing unconfirmed account; enter the email address first.
+If a customized confirmation email template builds its own redirect URL, use
+`{{ .RedirectTo }}` instead of `{{ .SiteURL }}` so it honors the requested site.
+
 ## 5. Verify
 
 ```bash
