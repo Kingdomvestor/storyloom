@@ -51,6 +51,8 @@ const state = {
   errors: [],
   dirty: false,
   defaultBrand: null,   // the user's default footer, applied to new decks
+  savedDecks: [],
+  dashboardFilter: 'all',
   brands: null,         // the brand library, loaded when the Brand tab first opens
   styleLibrary: [],
   isAdmin: false,
@@ -273,13 +275,35 @@ async function loadDashboard() {
   state.plan = r.plan ?? 'free';
   state.defaultBrand = r.defaultBrand ?? null;
   renderCredits();
+  state.savedDecks = r.decks;
+  renderSavedDecks();
+}
+
+function renderSavedDecks() {
+  const empty = $('#dashEmpty');
+  const grid = $('#deckGrid');
+  const decks = state.savedDecks;
+  const visibleDecks = state.dashboardFilter === 'all'
+    ? decks
+    : decks.filter((deck) => deck.source === state.dashboardFilter);
   const deckCount = $('#deckCount');
-  if (deckCount) deckCount.textContent = `${r.decks.length} ${r.decks.length === 1 ? 'deck' : 'decks'}`;
+  if (deckCount) deckCount.textContent = `${visibleDecks.length} ${visibleDecks.length === 1 ? 'deck' : 'decks'}`;
+
   grid.innerHTML = '';
   empty.classList.remove('error');
-  empty.textContent = 'No saved carousels yet. Create one with AI or start from a free template.';
-  empty.hidden = r.decks.length > 0;
-  for (const d of r.decks) grid.appendChild(deckCard(d));
+  if (!decks.length) {
+    empty.textContent = 'No saved carousels yet. Create one with AI or start from a free template.';
+    empty.hidden = false;
+    return;
+  }
+  if (!visibleDecks.length) {
+    empty.textContent = state.dashboardFilter === 'ai' ? 'No AI-generated decks yet.' : 'No template decks yet.';
+    empty.hidden = false;
+    return;
+  }
+
+  empty.hidden = true;
+  for (const deck of visibleDecks) grid.appendChild(deckCard(deck));
 }
 
 function deckCard(d) {
@@ -347,6 +371,13 @@ async function openSavedDeck(id) {
 }
 
 function wireDashboard() {
+  $$('#deckFilters button').forEach((button) => {
+    button.onclick = () => {
+      state.dashboardFilter = button.dataset.filter;
+      selectOne($$('#deckFilters button'), button);
+      renderSavedDecks();
+    };
+  });
   $('#newDeckBtn').onclick = () => {
     state.deckId = null;
     document.documentElement.dataset.view = 'compose';

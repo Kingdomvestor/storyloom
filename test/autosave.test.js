@@ -147,6 +147,16 @@ test('autosave persists edits made while the first save is in flight', async () 
     'Delete Saved sample carousel');
   assert.equal(await page.$eval('.deckcard .del svg', (icon) => icon.getAttribute('aria-hidden')),
     'true');
+  assert.equal(await page.$eval('#deckCount', (count) => count.textContent), '2 decks');
+  await page.$eval('#deckFilters button[data-filter="template"]', (button) => button.click());
+  assert.equal(await page.$eval('#deckCount', (count) => count.textContent), '1 deck');
+  assert.deepEqual(await page.$$eval('.deckcard .badge-source', (badges) =>
+    badges.map((badge) => badge.textContent)), ['Template']);
+  await page.$eval('#deckFilters button[data-filter="ai"]', (button) => button.click());
+  assert.equal(await page.$eval('#deckCount', (count) => count.textContent), '1 deck');
+  assert.deepEqual(await page.$$eval('.deckcard .badge-source', (badges) =>
+    badges.map((badge) => badge.textContent)), ['AI generated']);
+  await page.$eval('#deckFilters button[data-filter="all"]', (button) => button.click());
   const cardFooters = await page.$$eval('.deckcard', (cards) => cards.map((card) => {
     const footer = card.querySelector('.deckcard-foot');
     return {
