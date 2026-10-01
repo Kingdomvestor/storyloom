@@ -9,6 +9,9 @@
 
 <!-- 1. ANTI-FOUC: Set theme BEFORE paint -->
 <script src="/theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 <link href="/landing.css" rel="stylesheet" />
 </head>
 <body>
@@ -24,17 +27,25 @@
       <a href="/signin">Sign in</a>
     </div>
     <div class="nav-right">
-      <details class="mobile-menu">
-        <summary>Menu</summary>
-        <div class="mobile-menu-panel">
-          <a href="#how">How it works</a>
-          <a href="#examples">Examples</a>
-          <a href="/signin">Sign in</a>
-        </div>
-      </details>
       <button id="theme-toggle" class="theme-toggle" data-theme-toggle type="button" aria-label="Switch color theme">
         <!-- Icon injected by JS -->
       </button>
+      <details class="mobile-menu">
+        <summary><span class="mobile-menu-label">Menu</span></summary>
+        <div class="mobile-menu-panel">
+          <nav class="mobile-menu-links" aria-label="Mobile navigation">
+            <a href="#features">Features</a>
+            <a href="#how">How it works</a>
+            <a href="#examples">Examples</a>
+            <a href="#mvp">MVP access</a>
+          </nav>
+          <div class="mobile-menu-actions">
+            <a href="/signin" class="btn btn-ghost">Sign in</a>
+            <a href="/studio" class="btn btn-primary">Open the studio</a>
+          </div>
+        </div>
+      </details>
+      
       <a href="/studio" class="btn btn-primary" aria-label="Open the studio">
         <span class="nav-cta-full">Open the studio →</span>
         <span class="nav-cta-short" aria-hidden="true">Studio →</span>
@@ -54,15 +65,14 @@
   <div>
     <div class="eyebrow"><span>MVP in development · Testing on Render</span></div>
     <h1>Text in.<br>On-brand<br><span>carousel out.</span></h1>
-    <p class="sub">Turn an idea or article into a polished carousel. Edit every slide, make it yours, and export it ready to post.</p>
+    <p class="sub">Turn text or a link into an editable 5–10 slide carousel for LinkedIn or Instagram. Export it as PNG, PDF, or ZIP.</p>
     <div class="hero-actions">
-      <a href="/studio" class="btn btn-primary">Try the MVP →</a>
-      <a href="#examples" class="btn btn-ghost">See a real carousel</a>
+      <a href="/studio" class="btn btn-primary">Open the studio</a>
+      <a href="#examples" class="btn btn-ghost">Browse examples</a>
     </div>
-    <p class="proofline">One idea. Five to ten editable slides. Real Storyloom output.</p>
   </div>
-  <div class="hero-preview" aria-label="Style preview">
-    <div class="demo-label">Three real starter decks, rendered by Storyloom</div>
+  <div class="hero-preview" aria-label="Real Storyloom carousel examples">
+    <div class="demo-label">Three real starter styles</div>
     <div class="slides">
       <img class="slide-preview" src="/demo/signature-african/slide-01.png" alt="Signature African style: 5 rules for posts that travel" />
       <img class="slide-preview" src="/demo/editorial-clean/slide-01.png" alt="Editorial Clean style: The draft nobody wanted to write" />
@@ -72,7 +82,7 @@
   </div>
 </header>
 
-<section>
+<section id="features">
   <h2>Two ways to start</h2>
   <div class="grid3 section-grid">
     <div class="card">
@@ -104,16 +114,43 @@
 </section>
 
 <section id="examples">
-  <h2>Examples — real Storyloom output</h2>
-  <p class="section-lead">Starter decks rendered with the same template used by the editor and exports.</p>
-  <div class="grid3">
-    <div class="card example-card"><img class="slide-preview" src="/demo/signature-african/slide-01.png" alt="First slide of 5 rules for posts that travel" /><div class="example-copy"><strong>5 rules for posts that travel</strong><p>Signature African · listicle</p></div></div>
-    <div class="card example-card"><img class="slide-preview" src="/demo/editorial-clean/slide-01.png" alt="First slide of The draft nobody wanted to write" /><div class="example-copy"><strong>The draft nobody wanted to write</strong><p>Editorial Clean · story</p></div></div>
-    <div class="card example-card"><img class="slide-preview" src="/demo/mono-terminal/slide-01.png" alt="First slide of Ship a side project in one weekend" /><div class="example-copy"><strong>Ship a side project in one weekend</strong><p>Mono Terminal · how-to</p></div></div>
+  <h2>Real carousels. Three styles.</h2>
+  <p class="section-lead">Each image is an actual Storyloom starter deck.</p>
+  <div class="example-grid">
+    <article class="card example-card example-card-featured">
+      <img src="/demo/signature-african/slide-01.png" alt="First slide of 5 rules for posts that travel" />
+      <div class="example-copy">
+        <span class="example-kicker">Signature African · Listicle</span>
+        <strong>5 rules for posts that travel</strong>
+        <p>A confident, high-contrast look for ideas worth sharing.</p>
+      </div>
+    </article>
+    <article class="card example-card">
+      <img src="/demo/editorial-clean/slide-01.png" alt="First slide of The draft nobody wanted to write" />
+      <div class="example-copy">
+        <span class="example-kicker">Editorial Clean · Story</span>
+        <strong>The draft nobody wanted to write</strong>
+      </div>
+    </article>
+    <article class="card example-card">
+      <img src="/demo/mono-terminal/slide-01.png" alt="First slide of Ship a side project in one weekend" />
+      <div class="example-copy">
+        <span class="example-kicker">Mono Terminal · How-to</span>
+        <strong>Ship a side project in one weekend</strong>
+      </div>
+    </article>
+    <aside class="card example-specs" aria-label="Carousel output specifications">
+      <span class="example-kicker">Ready for the feed</span>
+      <div class="spec-grid">
+        <div><strong>1080×1350</strong><span>Export size</span></div>
+        <div><strong>4:5</strong><span>Aspect ratio</span></div>
+        <div><strong>5–10</strong><span>Editable slides</span></div>
+      </div>
+    </aside>
   </div>
 </section>
 
-<section>
+<section id="mvp">
   <h2>MVP access</h2>
   <div class="card mvp-card">
     <p>Storyloom is in development and being tested with hackathon participants. Start with a template for free, or use available credits to generate a carousel with AI. Commercial plans and pricing have not been finalized.</p>
@@ -136,9 +173,9 @@
 
 <div class="cta-lime">
   <p class="cta-kicker">HELP SHAPE THE NEXT VERSION</p>
-  <h2>TRY THE<br>MVP.</h2>
+  <h2>Make your next post<br>a carousel.</h2>
   <p class="cta-copy">Turn an idea into a carousel and share feedback while the product is in development.</p>
-  <a href="/studio" class="btn cta-button">Try the MVP →</a>
+  <a href="/studio" class="btn cta-button">Open the studio</a>
 </div>
 
 <footer class="site-footer">STORYLOOM / 2026 — MVP in development · Testing on Render</footer>
