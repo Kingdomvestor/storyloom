@@ -1690,6 +1690,33 @@ function renderWarnings(host) {
 }
 
 // --------------------------------------------------------------- style tab
+function cssColorToHex(value) {
+  const color = String(value ?? '').trim();
+  if (/^#[0-9a-f]{6}$/i.test(color)) return color;
+  const channels = /^rgba?\(([^)]+)\)/i.exec(color)?.[1]
+    ?.split(',').slice(0, 3).map((channel) => Number(channel.trim()));
+  if (!channels || channels.length !== 3 || channels.some((channel) => !Number.isFinite(channel))) return '#000000';
+  return `#${channels.map((channel) => Math.max(0, Math.min(255, Math.round(channel)))
+    .toString(16).padStart(2, '0')).join('')}`;
+}
+
+function previewThemeColor(property) {
+  const slide = $('#preview')?.contentDocument?.querySelector('#slide');
+  return cssColorToHex(slide && getComputedStyle(slide).getPropertyValue(property));
+}
+
+function restoreStyleTheme() {
+  const selectedStyle = state.styleLibrary.find((style) => (style.slug || style.id) === state.deck.style_id);
+  if (selectedStyle && !selectedStyle.is_system) state.deck.theme = structuredClone(selectedStyle.settings || {});
+  else delete state.deck.theme;
+}
+
+async function refreshThemePreview() {
+  await show($('#preview'), state.deck, state.index);
+  refreshAllThumbs();
+  revalidate();
+}
+
 function buildStyleTab() {
   const host = $('#tabStyle');
   if (!host || !state.meta) return;
@@ -1718,13 +1745,96 @@ function buildStyleTab() {
       state.deck.style_id = s;
       if (selectedStyle && !selectedStyle.is_system) state.deck.theme = structuredClone(selectedStyle.settings || {});
       else delete state.deck.theme;
-      selectOne($$('.stylecard', grid), card);
-      await show($('#preview'), state.deck, state.index);
-      refreshAllThumbs();
+      await refreshThemePreview();
+      const scrollTop = host.scrollTop;
+      buildStyleTab();
+      host.scrollTop = scrollTop;
     };
     grid.appendChild(card);
   }
   host.appendChild(grid);
+
+  const themeHead = document.createElement('div');
+  themeHead.className = 'subhead';
+  themeHead.textContent = 'Customize this deck';
+  host.appendChild(themeHead);
+
+  const themeControls = document.createElement('div');
+  themeControls.className = 'theme-customize';
+  const colorGrid = document.createElement('div');
+  colorGrid.className = 'theme-colors';
+  for (const [labelText, field, property] of [
+    ['Background', 'background_hex', '--bg'],
+    ['Text', 'foreground_hex', '--fg'],
+    ['Accent', 'accent_hex', '--accent'],
+  ]) {
+    const label = document.createElement('label');
+    label.textContent = labelText;
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.id = `theme-${field}`;
+    input.value = state.deck.theme?.[field] || previewThemeColor(property);
+    input.setAttribute('aria-label', `${labelText} color`);
+    input.addEventListener('change', async () => {
+      state.deck.theme = { ...(state.deck.theme || {}), [field]: input.value };
+      await refreshThemePreview();
+    });
+    label.appendChild(input);
+    colorGrid.appendChild(label);
+  }
+  themeControls.appendChild(colorGrid);
+
+  const fontLabel = document.createElement('label');
+  fontLabel.className = 'theme-font-label';
+  fontLabel.textContent = 'Font family';
+  const fontSelect = document.createElement('select');
+  fontSelect.id = 'theme-font';
+  fontSelect.setAttribute('aria-label', 'Font family');
+  const fontOptions = [
+    ['Skin typography', ''],
+    ['Lato', 'Lato, system-ui, sans-serif'],
+    ['Poppins', 'Poppins, system-ui, sans-serif'],
+    ['Playfair Display', '"Playfair Display", Georgia, serif'],
+    ['JetBrains Mono', '"JetBrains Mono", monospace'],
+  ];
+  const currentFont = state.deck.theme?.font_pair || '';
+  if (currentFont && !fontOptions.some(([, value]) => value === currentFont)) {
+    fontOptions.push([`Current: ${currentFont}`, currentFont]);
+  }
+  for (const [name, value] of fontOptions) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = name;
+    fontSelect.appendChild(option);
+  }
+  fontSelect.value = currentFont;
+  fontSelect.addEventListener('change', async () => {
+    const theme = { ...(state.deck.theme || {}) };
+    if (fontSelect.value) theme.font_pair = fontSelect.value;
+    else delete theme.font_pair;
+    if (Object.keys(theme).length) state.deck.theme = theme;
+    else delete state.deck.theme;
+    await refreshThemePreview();
+  });
+  fontLabel.appendChild(fontSelect);
+  themeControls.appendChild(fontLabel);
+
+  const themeActions = document.createElement('div');
+  themeActions.className = 'theme-actions';
+  const resetTheme = document.createElement('button');
+  resetTheme.type = 'button';
+  resetTheme.className = 'btn-ghost sm';
+  resetTheme.textContent = 'Reset to skin';
+  resetTheme.addEventListener('click', async () => {
+    const scrollTop = host.scrollTop;
+    restoreStyleTheme();
+    await refreshThemePreview();
+    buildStyleTab();
+    host.scrollTop = scrollTop;
+  });
+  themeActions.appendChild(resetTheme);
+  themeControls.appendChild(themeActions);
+  host.appendChild(themeControls);
 
   if (state.isAdmin) {
     const adminWrap = document.createElement('div');
@@ -1758,8 +1868,10 @@ function buildStyleTab() {
         item.onclick = async () => {
           state.deck.style_id = style.slug || style.id;
           state.deck.theme = style.settings || {};
-          await show($('#preview'), state.deck, state.index);
-          refreshAllThumbs();
+          await refreshThemePreview();
+          const scrollTop = host.scrollTop;
+          buildStyleTab();
+          host.scrollTop = scrollTop;
         };
         library.appendChild(item);
       }

@@ -31,6 +31,7 @@ after(async () => {
 
 test('autosave persists edits made while the first save is in flight', async () => {
   const writes = [];
+  const savedDecks = [];
   const handlerErrors = [];
   const requests = [];
   const pageErrors = [];
@@ -106,14 +107,18 @@ test('autosave persists edits made while the first save is in flight', async () 
         return;
       }
       if (url.pathname === '/api/decks' && request.method() === 'POST') {
-        writes.push({ method: 'POST', title: JSON.parse(request.postData()).deck.title });
+        const savedDeck = JSON.parse(request.postData()).deck;
+        writes.push({ method: 'POST', title: savedDeck.title });
+        savedDecks.push(savedDeck);
         resolveCreateStarted();
         await new Promise((resolve) => setTimeout(resolve, 250));
         await respondJson({ ok: true, id: 'test-deck' });
         return;
       }
       if (url.pathname === '/api/decks/test-deck' && request.method() === 'PUT') {
-        writes.push({ method: 'PUT', title: JSON.parse(request.postData()).deck.title });
+        const savedDeck = JSON.parse(request.postData()).deck;
+        writes.push({ method: 'PUT', title: savedDeck.title });
+        savedDecks.push(savedDeck);
         await respondJson({ ok: true, id: 'test-deck' });
         return;
       }
@@ -238,6 +243,7 @@ test('autosave persists edits made while the first save is in flight', async () 
 
   await page.click('#newDeckBtn');
   await page.waitForFunction(() => document.documentElement.dataset.view === 'compose');
+  await page.click('#newDeckChoice [data-start-mode="generate"]');
   await page.$eval('#sourceText', (input) => {
     input.value = 'A short source to generate a carousel.';
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -249,4 +255,24 @@ test('autosave persists edits made while the first save is in flight', async () 
   );
   await page.waitForFunction(() => document.querySelector('#autostate')?.classList.contains('saved'));
   assert.deepEqual(writes[2], { method: 'POST', title: 'Generated sample deck' });
+
+  await page.$eval('#panelTabs button[data-tab="style"]', (button) => button.click());
+  await page.waitForSelector('#theme-background_hex');
+  const fontOptionLengths = await page.$$eval('#theme-font option', (options) =>
+    options.map((option) => option.value.length));
+  assert.ok(fontOptionLengths.every((length) => length <= 40));
+  await page.$eval('#theme-background_hex', (input) => {
+    input.value = '#123456';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.select('#theme-font', 'Poppins, system-ui, sans-serif');
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('#preview');
+    const slide = frame.contentDocument.querySelector('#slide');
+    return slide.style.getPropertyValue('--bg') === '#123456'
+      && frame.contentWindow.getComputedStyle(slide.querySelector('.heading')).fontFamily.includes('Poppins');
+  });
+  await page.waitForFunction(() => document.querySelector('#autostate')?.classList.contains('saved'));
+  assert.equal(savedDecks[3].theme.background_hex, '#123456');
+  assert.equal(savedDecks[3].theme.font_pair, 'Poppins, system-ui, sans-serif');
 });

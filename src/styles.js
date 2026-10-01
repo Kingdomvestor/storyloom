@@ -32,7 +32,7 @@ export function normalise(input = {}) {
     if (/^#[0-9a-fA-F]{6}$/.test(cleaned)) settings[field] = cleaned;
   }
 
-  const fontPair = String(raw.font_pair ?? '').trim().slice(0, 40);
+  const fontPair = String(raw.font_pair ?? '').trim().slice(0, 120);
   if (fontPair) settings.font_pair = fontPair;
 
   const name = String(input.name ?? '').trim().slice(0, 60);

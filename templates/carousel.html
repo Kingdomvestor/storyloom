@@ -32,6 +32,7 @@
     overflow: hidden;
     isolation: isolate;
   }
+  #slide.theme-font-override * { font-family: inherit !important; }
 
   /* text blocks: never let a long unbroken token spill past the card edge */
   .tagline, .heading, .subtitle, .body, .bullets li, .cta, .foot, .page { overflow-wrap: anywhere; }
@@ -364,6 +365,7 @@
       $slide.style.removeProperty(property);
       if (value) $slide.style.setProperty(property, value);
     }
+    $slide.classList.toggle("theme-font-override", Boolean(theme.font_pair));
     $slide.style.removeProperty("font-family");
     if (theme.font_pair) $slide.style.fontFamily = theme.font_pair;
 

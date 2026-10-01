@@ -26,7 +26,7 @@
         "background_hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
         "surface_hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
         "foreground_hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
-        "font_pair": { "type": "string", "maxLength": 40 }
+        "font_pair": { "type": "string", "maxLength": 120 }
       }
     },
     "brand": {
