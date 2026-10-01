@@ -32,6 +32,7 @@ after(async () => {
 test('autosave persists edits made while the first save is in flight', async () => {
   const writes = [];
   const savedDecks = [];
+  const savedSources = [];
   const handlerErrors = [];
   const requests = [];
   const pageErrors = [];
@@ -108,6 +109,7 @@ test('autosave persists edits made while the first save is in flight', async () 
       }
       if (url.pathname === '/api/decks' && request.method() === 'POST') {
         const savedDeck = JSON.parse(request.postData()).deck;
+        savedSources.push(JSON.parse(request.postData()).source);
         writes.push({ method: 'POST', title: savedDeck.title });
         savedDecks.push(savedDeck);
         resolveCreateStarted();
@@ -117,6 +119,7 @@ test('autosave persists edits made while the first save is in flight', async () 
       }
       if (url.pathname === '/api/decks/test-deck' && request.method() === 'PUT') {
         const savedDeck = JSON.parse(request.postData()).deck;
+        savedSources.push(JSON.parse(request.postData()).source);
         writes.push({ method: 'PUT', title: savedDeck.title });
         savedDecks.push(savedDeck);
         await respondJson({ ok: true, id: 'test-deck' });
@@ -224,6 +227,7 @@ test('autosave persists edits made while the first save is in flight', async () 
     { method: 'POST', title: 'First saved version' },
     { method: 'PUT', title: 'Latest edit during save' },
   ]);
+  assert.deepEqual(savedSources.slice(0, 2), ['template', 'template']);
   assert.deepEqual(handlerErrors, []);
 
   await page.click('#brandHome');
@@ -255,6 +259,7 @@ test('autosave persists edits made while the first save is in flight', async () 
   );
   await page.waitForFunction(() => document.querySelector('#autostate')?.classList.contains('saved'));
   assert.deepEqual(writes[2], { method: 'POST', title: 'Generated sample deck' });
+  assert.equal(savedSources[2], 'ai');
 
   await page.$eval('#panelTabs button[data-tab="style"]', (button) => button.click());
   await page.waitForSelector('#theme-background_hex');

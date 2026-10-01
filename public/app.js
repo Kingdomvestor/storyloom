@@ -363,7 +363,7 @@ async function persist() {
     do {
       const revision = deckRevision;
       const deck = structuredClone(state.deck);
-      const payload = { title: deck.title || 'Untitled', deck };
+      const payload = { title: deck.title || 'Untitled', source: deck.source, deck };
       const id = state.deckId;
       try {
         r = id
