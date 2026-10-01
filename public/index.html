@@ -95,7 +95,14 @@
       <h2>Saved decks</h2>
       <p>Pick up where you left off.</p>
     </div>
-    <span id="deckCount" aria-live="polite"></span>
+    <div class="dashsection-tools">
+      <span id="deckCount" aria-live="polite"></span>
+      <div class="seg dashfilter" id="deckFilters" role="group" aria-label="Filter saved decks">
+        <button class="on" type="button" data-filter="all" aria-pressed="true">All</button>
+        <button type="button" data-filter="ai" aria-pressed="false">AI</button>
+        <button type="button" data-filter="template" aria-pressed="false">Template</button>
+      </div>
+    </div>
   </div>
   <p class="dashempty" id="dashEmpty" role="status" aria-live="polite" hidden></p>
   <section class="deckgrid" id="deckGrid" aria-label="Saved carousels"></section>
