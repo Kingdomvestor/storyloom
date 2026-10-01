@@ -18,26 +18,28 @@
 
 <!-- ============================================================ app header -->
 <header class="topbar">
-  <a class="brand" id="brandHome" href="/studio" aria-label="Storyloom home">
-    <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".35"/>
-      <path d="M7 3v18M12 3v18M17 3v18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
-      <circle cx="12" cy="12" r="2.4" fill="currentColor"/>
-    </svg>
-    <span>Storyloom</span>
-  </a>
-  <div class="topbar-right">
-    <button class="theme-toggle" id="theme-toggle" data-theme-toggle type="button" aria-label="Switch color theme">Dark</button>
-    <!-- No `hidden` attribute on .acct: Bootstrap's reboot ships
-         [hidden]{display:none!important}, which no author rule can undo. The
-         pre-auth state is `.acct { display: none }` in app.css, flipped by
-         html[data-auth="in"]. -->
-    <button class="pill acct" id="dashLink" title="My decks">My decks</button>
-    <span class="pill credits acct" id="creditsPill" title="AI generations left">
-      <b id="creditsNum">–</b>&nbsp;credits
-    </span>
-    <span class="acct email" id="userEmail"></span>
-    <button class="linkbtn acct" id="logoutBtn">Sign out</button>
+  <div class="topbar-inner">
+    <a class="brand" id="brandHome" href="/studio" aria-label="Storyloom home">
+      <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".35"/>
+        <path d="M7 3v18M12 3v18M17 3v18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        <circle cx="12" cy="12" r="2.4" fill="currentColor"/>
+      </svg>
+      <span>Storyloom</span>
+    </a>
+    <div class="topbar-right">
+      <button class="theme-toggle" id="theme-toggle" data-theme-toggle type="button" aria-label="Switch color theme">Dark</button>
+      <!-- No `hidden` attribute on .acct: Bootstrap's reboot ships
+          [hidden]{display:none!important}, which no author rule can undo. The
+          pre-auth state is `.acct { display: none }` in app.css, flipped by
+          html[data-auth="in"]. -->
+      <button class="pill acct" id="dashLink" title="My decks">My decks</button>
+      <span class="pill credits acct" id="creditsPill" title="AI generations left">
+        <b id="creditsNum">–</b>&nbsp;credits
+      </span>
+      <span class="acct email" id="userEmail"></span>
+      <button class="linkbtn acct" id="logoutBtn">Sign out</button>
+    </div>
   </div>
 </header>
 
@@ -71,13 +73,29 @@
 
 <!-- ============================================================ DASHBOARD -->
 <main class="view view-dashboard" id="viewDashboard">
-  <div class="dashhead">
-    <div class="dashintro">
-      <p class="dash-eyebrow">YOUR WORKSPACE</p>
-      <h1>My decks</h1>
-      <p class="dashsub">Pick up a carousel or start a new one.</p>
+  <section class="dashhero" aria-labelledby="dashHeroTitle">
+    <div class="dashhero-copy">
+      <p class="dash-eyebrow">STORYLOOM STUDIO</p>
+      <h1 id="dashHeroTitle">Give your next<br />idea <span>a frame.</span></h1>
+      <p>Turn a thought or a link into an editable carousel.</p>
     </div>
-    <button class="btn-go sm" id="newDeckBtn">+ New carousel</button>
+    <div class="dashhero-action">
+      <span class="dashhero-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <div class="dashhero-action-copy">
+        <h2>Start with the story.</h2>
+        <p>Text, a link, or a template.</p>
+        <button class="dashhero-start" id="newDeckBtn" type="button">
+          <span>Start a carousel</span><span class="dashhero-arrow" aria-hidden="true">↗</span>
+        </button>
+      </div>
+    </div>
+  </section>
+  <div class="dashsectionhead">
+    <div>
+      <h2>Saved decks</h2>
+      <p>Pick up where you left off.</p>
+    </div>
+    <span id="deckCount" aria-live="polite"></span>
   </div>
   <p class="dashempty" id="dashEmpty" role="status" aria-live="polite" hidden></p>
   <section class="deckgrid" id="deckGrid" aria-label="Saved carousels"></section>

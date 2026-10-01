@@ -273,6 +273,8 @@ async function loadDashboard() {
   state.plan = r.plan ?? 'free';
   state.defaultBrand = r.defaultBrand ?? null;
   renderCredits();
+  const deckCount = $('#deckCount');
+  if (deckCount) deckCount.textContent = `${r.decks.length} ${r.decks.length === 1 ? 'deck' : 'decks'}`;
   grid.innerHTML = '';
   empty.classList.remove('error');
   empty.textContent = 'No saved carousels yet. Create one with AI or start from a free template.';
