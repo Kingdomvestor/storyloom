@@ -65,7 +65,7 @@ body {
   margin: 0;
   background: var(--ink);
   color: var(--text);
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 15px;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
@@ -206,7 +206,7 @@ code {
   border: 1px solid var(--line); border-radius: 18px;
   background: linear-gradient(180deg, var(--panel-2), var(--panel));
   box-shadow: var(--shadow);
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 .choice-header { margin-bottom: 26px; text-align: center; }
 .choice-header .dash-eyebrow {
@@ -224,7 +224,7 @@ code {
 .choice-card {
   width: 100%; min-height: 224px; padding: 22px 20px; border: 1px solid var(--line);
   border-radius: 16px; background: var(--panel); color: var(--text); text-align: left;
-  font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
   transition: border-color .16s ease, transform .16s ease, box-shadow .16s ease;
 }
 .choice-card:hover {
