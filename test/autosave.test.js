@@ -151,6 +151,9 @@ test('autosave persists edits made while the first save is in flight', async () 
   assert.ok(cardFooters.every(({ hasDelete, bottomGap }) => hasDelete && bottomGap <= 20));
   await page.setViewport({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  await page.setViewport({ width: 320, height: 740 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  assert.ok(await page.$eval('.topbar-right', (el) => el.getBoundingClientRect().right <= window.innerWidth));
   await page.setViewport({ width: 1280, height: 900 });
 
   const deck = {
@@ -173,6 +176,24 @@ test('autosave persists edits made while the first save is in flight', async () 
     input.value = 'First saved version';
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
+  await page.setViewport({ width: 360, height: 800 });
+  await page.waitForFunction(() =>
+    document.querySelector('#stageFrame').getBoundingClientRect().width
+    <= document.querySelector('#stage').clientWidth
+  );
+  const mobileEditor = await page.evaluate(() => ({
+    pageFits: document.documentElement.scrollWidth <= window.innerWidth,
+    toolbarFitsInternally: document.querySelector('.editbar-right').scrollWidth >= document.querySelector('.editbar-right').clientWidth,
+    railFitsInternally: document.querySelector('.rail').scrollWidth >= document.querySelector('.rail').clientWidth,
+    slideCount: document.querySelectorAll('.rail .rthumb').length,
+    previewFitsStage: document.querySelector('#stageFrame').getBoundingClientRect().width <= document.querySelector('#stage').clientWidth,
+  }));
+  assert.equal(mobileEditor.pageFits, true);
+  assert.equal(mobileEditor.toolbarFitsInternally, true);
+  assert.equal(mobileEditor.railFitsInternally, true);
+  assert.equal(mobileEditor.slideCount, 5);
+  assert.equal(mobileEditor.previewFitsStage, true);
+  await page.setViewport({ width: 1280, height: 900 });
 
   let timeout;
   try {

@@ -56,6 +56,12 @@
       });
     }
 
+    for (const link of document.querySelectorAll('.mobile-menu-panel a')) {
+      link.addEventListener('click', () => {
+        link.closest('.mobile-menu')?.removeAttribute('open');
+      });
+    }
+
     const toggleStickyHeaderState = () => {
       const scrolled = window.scrollY > 8;
       for (const el of document.querySelectorAll('.nav, .topbar')) {
