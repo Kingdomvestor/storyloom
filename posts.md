@@ -619,4 +619,17 @@ Status: draft
 **Images:** landing hero beside the signed-in studio.
 
 ---
+
+## 2026-10-02 - Keep auth state in sync
+Status: draft
+
+> A slow dashboard request made Storyloom show the sign-in form beside an already signed-in account header.
+>
+> The loading view now stays up until account data is ready, and account controls stay hidden on auth/loading screens.
+>
+> Small state mismatches make a product feel broken; this one was just two async transitions finishing at different times.
+
+**Images:** sign-in/loading transition before and after.
+
+---
 f58104F56804

@@ -120,6 +120,9 @@ function setAuthMessage(text, { error = false } = {}) {
 
 /** Single source of truth for "who is signed in" → drives the view + header. */
 async function applySession(session, { navigate = true } = {}) {
+  if (session?.user && navigate && ['boot', 'auth'].includes(document.documentElement.dataset.view)) {
+    document.documentElement.dataset.view = 'boot';
+  }
   state.user = session?.user ?? null;
   document.documentElement.dataset.auth = state.user ? 'in' : 'out';
   $('#brandHome').href = state.user ? '/studio' : '/';
@@ -131,8 +134,8 @@ async function applySession(session, { navigate = true } = {}) {
   }
   $('#userEmail').textContent = state.user.email;
   await loadDashboard();                        // sets credits + grid
-  if (sb) await loadStyleLibrary();
   if (state.user && navigate) document.documentElement.dataset.view = 'dashboard';
+  if (sb) await loadStyleLibrary();
 }
 
 function renderCredits() {

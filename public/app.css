@@ -84,6 +84,8 @@ html[data-view="editor"] .view-editor { display: block; }
 .acct { display: none; }
 html[data-auth="out"] .acct { display: none; }
 html[data-auth="in"] .acct { display: inline-flex; }
+html[data-view="boot"] .acct,
+html[data-view="auth"] .acct { display: none; }
 
 button { font-family: inherit; cursor: pointer; }
 input, textarea { font-family: inherit; }
