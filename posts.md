@@ -658,4 +658,29 @@ Status: draft
 **Images:** preview followed by a cached export.
 
 ---
-f58104F56804
+
+## 2026-10-02 - Small editor details that looked broken
+Status: draft
+
+> Three visual bugs were making Storyloom's editor feel unfinished:
+>
+> Slide controls showed thumbnails through them, two text fields looked like browser defaults, and the header didn't line up with the toolbar.
+>
+> Fixed the rail footer, made all text fields share one style, and aligned the header to the editor's padding.
+
+**Images:** the editor rail and content panel before and after.
+
+---
+
+## 2026-10-02 - Refresh shouldn't throw you out of your deck
+Status: draft
+
+> The studio was a single page, but the open deck only lived in memory.
+>
+> Refreshing sent me back to the dashboard, even when autosave had kept the work.
+>
+> The URL now identifies a saved deck; a tab-scoped recovery snapshot covers edits and drafts still in progress. Same studio page, same slide after refresh.
+
+**Images:** the active editor before and after a browser refresh.
+
+---

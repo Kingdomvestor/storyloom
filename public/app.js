@@ -59,10 +59,12 @@ const state = {
   compose: { src: 'text', slides: 'auto', narrative: 'listicle', style: 'signature-african', platform: 'linkedin' },
 };
 
+const EDITOR_SNAPSHOT_KEY = 'storyloom.editor-snapshot';
 let sb = null; // supabase browser client, or null when unconfigured
 let passwordRecoveryActive = false;
 let persistPromise = null;
 let deckRevision = 0;
+let editorRestorePromise = null;
 
 // ----------------------------------------------------------------- transport
 async function api(path, body, opts = {}) {
@@ -134,7 +136,10 @@ async function applySession(session, { navigate = true } = {}) {
   }
   $('#userEmail').textContent = state.user.email;
   await loadDashboard();                        // sets credits + grid
-  if (state.user && navigate) document.documentElement.dataset.view = 'dashboard';
+  if (state.user && navigate) {
+    const restored = await restoreEditorFromLocation();
+    if (!restored) document.documentElement.dataset.view = 'dashboard';
+  }
   if (sb) await loadStyleLibrary();
 }
 
@@ -158,6 +163,7 @@ async function handleAuthEvent(event, session) {
   }
 
   if (event === 'SIGNED_OUT') {
+    clearEditorLocation();
     await applySession(null, { navigate: true });
     return;
   }
@@ -352,6 +358,7 @@ function wireAuth() {
         return;
       }
     }
+    clearEditorLocation();
     await applySession({ user: state.user });
   };
   $('#dashLink').onclick = async () => {
@@ -365,6 +372,7 @@ function wireAuth() {
         return;
       }
     }
+    clearEditorLocation();
     await applySession({ user: state.user });
   };
 }
@@ -479,6 +487,127 @@ async function openSavedDeck(id) {
   await openEditor(r.deck, { deckId: id });
 }
 
+function updateEditorLocation() {
+  const url = new URL(location.href);
+  url.pathname = '/studio';
+  url.search = '';
+  url.hash = '';
+  if (state.deckId) url.searchParams.set('deck', state.deckId);
+  else url.searchParams.set('draft', '1');
+  window.history.replaceState(null, '', url);
+}
+
+function clearEditorLocation() {
+  const url = new URL(location.href);
+  url.pathname = '/studio';
+  url.search = '';
+  url.hash = '';
+  window.history.replaceState(null, '', url);
+  try {
+    sessionStorage.removeItem(EDITOR_SNAPSHOT_KEY);
+  } catch (error) {
+    console.error('Could not clear the local editor recovery snapshot.', error);
+  }
+}
+
+function saveEditorSnapshot() {
+  if (!state.deck) return;
+  try {
+    sessionStorage.setItem(EDITOR_SNAPSHOT_KEY, JSON.stringify({
+      version: 1,
+      deckId: state.deckId,
+      deck: state.deck,
+      index: state.index,
+      dirty: state.dirty,
+    }));
+  } catch (error) {
+    console.error('Could not save the local editor recovery snapshot.', error);
+    const note = $('#stageNote');
+    if (note) note.textContent = 'Refresh recovery is unavailable in this browser; server autosave will continue.';
+    const status = $('#autostate');
+    if (status) {
+      status.className = 'autostate failed';
+      status.textContent = 'Refresh recovery unavailable';
+      status.title = 'This browser could not keep a local recovery copy. Server autosave will continue.';
+    }
+  }
+}
+
+function readEditorSnapshot() {
+  let raw;
+  try {
+    raw = sessionStorage.getItem(EDITOR_SNAPSHOT_KEY);
+  } catch (error) {
+    console.error('Could not read the local editor recovery snapshot.', error);
+    return null;
+  }
+  if (!raw) return null;
+  try {
+    const snapshot = JSON.parse(raw);
+    if (snapshot?.version === 1 && snapshot.deck && Array.isArray(snapshot.deck.slides)) return snapshot;
+  } catch (error) {
+    console.error('The local editor recovery snapshot could not be parsed.', error);
+  }
+  return null;
+}
+
+async function restoreEditorFromLocation() {
+  if (editorRestorePromise) return editorRestorePromise;
+  const pending = (async () => {
+    const params = new URLSearchParams(location.search);
+    const deckId = params.get('deck');
+    const isDraft = params.get('draft') === '1';
+    if (!deckId && !isDraft) return false;
+    if (document.documentElement.dataset.view === 'editor'
+      && state.deck
+      && (deckId ? state.deckId === deckId : !state.deckId)) return true;
+
+    const snapshot = readEditorSnapshot();
+    if (deckId && snapshot?.deckId === deckId && snapshot.dirty) {
+      await openEditor(snapshot.deck, {
+        deckId,
+        index: snapshot.index,
+        autoSave: true,
+      });
+      return true;
+    }
+    if (isDraft && snapshot && !snapshot.deckId) {
+      await openEditor(snapshot.deck, {
+        index: snapshot.index,
+        autoSave: snapshot.dirty,
+      });
+      return true;
+    }
+    if (deckId) {
+      const result = await api('/api/decks/' + encodeURIComponent(deckId));
+      if (result.ok) {
+        await openEditor(result.deck, {
+          deckId,
+          index: snapshot?.deckId === deckId ? snapshot.index : 0,
+        });
+        return true;
+      }
+      const empty = $('#dashEmpty');
+      empty.classList.add('error');
+      empty.hidden = false;
+      empty.textContent = `Could not restore this deck: ${result.message}`;
+    } else {
+      const error = state.user ? $('#dashEmpty') : $('#composeErr');
+      error.classList.add('error');
+      error.hidden = false;
+      error.textContent = 'This unsaved editor session is no longer available in this tab.';
+    }
+    clearEditorLocation();
+    return false;
+  })();
+  editorRestorePromise = pending;
+  try {
+    return await pending;
+  } finally {
+    if (editorRestorePromise === pending) editorRestorePromise = null;
+  }
+}
+
 function wireDashboard() {
   $$('#deckFilters button').forEach((button) => {
     button.onclick = () => {
@@ -488,6 +617,7 @@ function wireDashboard() {
     };
   });
   $('#newDeckBtn').onclick = () => {
+    clearEditorLocation();
     state.deckId = null;
     document.documentElement.dataset.view = 'compose';
     showNewDeckChoice();
@@ -515,6 +645,8 @@ async function persist() {
       if (!r.ok) return r;
       state.deckId = r.id ?? state.deckId;
       state.dirty = deckRevision !== revision;
+      updateEditorLocation();
+      saveEditorSnapshot();
     } while (state.dirty);
     return r;
   })();
@@ -582,6 +714,7 @@ function markDirty() {
   autosaveFailures = 0;
   deckRevision++;
   state.dirty = true;
+  saveEditorSnapshot();
   if (!state.user) return;   // degraded / signed out: nowhere to autosave to
   setAutoState('pending', 'Unsaved…');
   clearTimeout(autosaveTimer);
@@ -762,7 +895,8 @@ async function boot() {
     $('#brandHome').href = '/';
     document.documentElement.dataset.auth = 'out';
     document.documentElement.dataset.view = 'compose';
-    loadGallery();                 // templates are the whole app in degraded mode
+    await loadGallery();           // templates are the whole app in degraded mode
+    await restoreEditorFromLocation();
     return;
   }
   sb.auth.onAuthStateChange((event, session) => handleAuthEvent(event, session));
@@ -1127,10 +1261,11 @@ async function openEditor(deck, info = {}) {
   deckRevision = 0;
   $('#backBtn').disabled = false;
   state.deck = deck;
-  state.index = 0;
+  state.index = Number.isInteger(info.index) ? info.index : 0;
   state.deckId = info.deckId ?? null;
   state.dirty = false;
   document.documentElement.dataset.view = 'editor';
+  updateEditorLocation();
 
   // A new deck inherits the default brand; a saved one never does. Re-applying it
   // on open would resurrect a footer the user deliberately cleared three edits ago.
@@ -1149,11 +1284,12 @@ async function openEditor(deck, info = {}) {
   buildRail();
   buildBrandTab();
   buildAiTab();
-  await selectSlide(0);
+  await selectSlide(state.index);
   buildStyleTab();
   fitStage();
   resetHistory();
   setAutoState('', '');
+  saveEditorSnapshot();
   revalidate({ passive: true });   // opening a deck is not an edit of it
   if (info.autoSave) markDirty();
 }
@@ -1174,6 +1310,7 @@ function wireEditor() {
         return;
       }
     }
+    clearEditorLocation();
     state.deckId = null;
     document.documentElement.dataset.view = state.user ? 'dashboard' : 'compose';
     if (state.user) loadDashboard();
@@ -1424,6 +1561,7 @@ async function selectSlide(i) {
   $('#nextSlide').disabled = state.index === n - 1;
 
   await show($('#preview'), state.deck, state.index);
+  saveEditorSnapshot();
   buildContentTab();
 }
 
@@ -2552,7 +2690,7 @@ async function renderPngs() {
     $('#stageNote').textContent = `Render failed — ${r.message}`;
     return;
   }
-  $('#sheetTitle').textContent = `${r.count} PNGs written`;
+  $('#sheetTitle').textContent = `${r.count} Slides written`;
   $('#sheetSub').textContent =
     `${r.dir}/ · 1080×1350 each · ${r.seconds}s${r.notes?.length ? ` · ${r.notes.join('; ')}` : ''}`;
   const shots = $('#shots');

@@ -11,6 +11,7 @@ html[data-theme="light"] .peek,
 html[data-theme="light"] textarea,
 html[data-theme="light"] input[type="url"],
 html[data-theme="light"] input[type="text"],
+html[data-theme="light"] .f input:not([type]),
 html[data-theme="light"] .titlebox,
 html[data-theme="light"] .tagbox {
   background-color: var(--field);
