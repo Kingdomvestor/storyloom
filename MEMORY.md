@@ -4,7 +4,7 @@ Where the build actually stands. Not the plan (that's
 `content-to-visual-generator-summary.md`) and not the agent's private memory —
 this is the running score, updated whenever work lands or scope moves.
 
-**Ship target:** Sept 20, 2026 · **Last updated:** 2026-10-01 · Budget: ₦0
+**Ship target:** Sept 20, 2026 · **Last updated:** 2026-10-02 · Budget: ₦0
 
 ---
 
@@ -29,6 +29,9 @@ this is the running score, updated whenever work lands or scope moves.
 - Supabase magic-link auth; `requireUser` soft gate on the authoring surface,
   `requireAccount` hard gate on the deck store. Degrades to single-user Week A
   when Supabase is unconfigured.
+- **Auth transition consistency (Oct 2).** On boot/sign-in, keep the loading
+  view visible until deck and credit data are ready; hide account chrome on
+  loading/auth views so a signed-in header cannot appear beside the sign-in form.
 - **Signup confirmation redirects (Sep 30).** Signup and resend return to the
   current site's `/signin` page instead of relying on Supabase's Site URL
   fallback; production and local callback URLs are documented for the allow-list.
