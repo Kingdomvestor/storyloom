@@ -933,7 +933,6 @@ textarea:focus, input:focus {
   margin: 0;
   font-size: 11px; color: var(--muted); letter-spacing: .02em;
 }
-.authfield-hidden { display: none; }
 .input-wrap {
   display: flex; align-items: center; gap: 10px; min-height: 48px;
   padding: 0 12px; border: 1px solid rgba(255, 255, 255, 0.12);

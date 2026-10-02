@@ -177,10 +177,8 @@ function setAuthMode(mode) {
   const back = $('#authBackToSignIn');
   const resetLink = $('#authResetLink');
   const emailField = $('#authEmailField');
-  const confirmField = $('#authConfirmField');
   const passwordField = $('#authPasswordField');
   const passwordInput = $('#authPassword');
-  const confirmInput = $('#authConfirmPassword');
   const resend = $('#authResend');
   const emailInput = $('#authEmail');
 
@@ -195,7 +193,6 @@ function setAuthMode(mode) {
   const isUpdatePassword = mode === 'update-password';
 
   passwordField.hidden = isReset;
-  confirmField.hidden = !(isSignUp || isUpdatePassword);
   emailField.hidden = isUpdatePassword;
   back.hidden = !isReset && !isUpdatePassword;
   toggle.hidden = isReset || isUpdatePassword;
@@ -208,9 +205,7 @@ function setAuthMode(mode) {
   if (isReset) {
     emailInput.required = true;
     passwordInput.required = false;
-    confirmInput.required = false;
     passwordInput.value = '';
-    confirmInput.value = '';
     passwordInput.autocomplete = 'off';
     emailInput.focus();
     return;
@@ -219,8 +214,6 @@ function setAuthMode(mode) {
   emailInput.required = !isUpdatePassword;
   passwordInput.required = true;
   passwordInput.autocomplete = isSignUp || isUpdatePassword ? 'new-password' : 'current-password';
-  confirmInput.required = isSignUp || isUpdatePassword;
-  if (!isSignUp && !isUpdatePassword) confirmInput.value = '';
   emailInput.focus();
 }
 
@@ -255,17 +248,10 @@ function wireAuth() {
     if (!sb) return;
     const email = $('#authEmail').value.trim();
     const password = $('#authPassword').value;
-    const confirmPassword = $('#authConfirmPassword').value;
     $('#authErr').hidden = true;
     $('#authMsg').hidden = true;
     $('#authSubmit').disabled = true;
     const mode = form.dataset.mode;
-
-    if ((mode === 'signup' || mode === 'update-password') && password !== confirmPassword) {
-      $('#authSubmit').disabled = false;
-      setAuthMessage('Passwords do not match.', { error: true });
-      return;
-    }
 
     if (mode === 'reset') {
       const { error } = await sb.auth.resetPasswordForEmail(email, {
@@ -290,7 +276,6 @@ function wireAuth() {
       passwordRecoveryActive = false;
       await sb.auth.signOut();
       $('#authPassword').value = '';
-      $('#authConfirmPassword').value = '';
       setAuthMode('signin');
       setAuthMessage('Password updated. Sign in with your new password.');
       return;
