@@ -122,9 +122,10 @@ code {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  width: min(75vw, 1280px);
+  width: 100%;
   min-height: 50px;
   margin: 0 auto;
+  padding-inline: 14px;
 }
 .brand {
   display: flex; align-items: center; gap: 10px;
@@ -166,7 +167,7 @@ code {
 
 @media (max-width: 760px) {
   .topbar { width: 100%; max-width: none; min-height: 56px; padding: 8px 14px; }
-  .topbar-inner { width: 100%; grid-template-columns: minmax(0, 1fr) auto; }
+  .topbar-inner { width: 100%; padding-inline: 0; grid-template-columns: minmax(0, 1fr) auto; }
   .topbar-right { gap: 6px; }
   .topbar .pill { height: 30px; padding: 0 8px; font-size: 11px; }
   .topbar .email, .topbar .pill-quiet { display: none !important; }
@@ -287,7 +288,7 @@ code {
 .seg-source { margin-bottom: 14px; }
 .seg-source button.on { color: var(--gold); }
 
-textarea, input[type="url"], input[type="text"], .titlebox {
+textarea, input[type="url"], input[type="text"], .f input:not([type]), .titlebox {
   width: 100%;
   background: var(--field);
   color: var(--text);
@@ -666,7 +667,8 @@ textarea:focus, input:focus {
   position: sticky; bottom: 0; z-index: 2;
   margin-top: auto; padding: 9px 0 2px;
   display: flex; align-items: center; gap: 6px; flex: 0 0 auto;
-  background: linear-gradient(to top, var(--panel) 74%, transparent);
+  border-top: 1px solid var(--line-soft);
+  background: var(--panel);
 }
 .rbtn {
   width: 34px; height: 28px; flex: 0 0 auto;
@@ -1164,7 +1166,7 @@ html[data-theme="light"] .authmsg {
 
   .editbar {
     height: auto; min-height: 52px; flex-wrap: wrap;
-    gap: 8px; padding: 8px 10px;
+    gap: 8px; padding: 8px 14px;
   }
   #backBtn { flex: 0 0 auto; }
   .titlebox { min-width: 0; max-width: none; }
@@ -1188,6 +1190,8 @@ html[data-theme="light"] .authmsg {
   .panel { min-height: 560px; }
   .panel-body { padding: 14px 14px 28px; }
 }
+@media (max-width: 480px) { .editbar { padding-inline: 12px; } }
+@media (max-width: 340px) { .editbar { padding-inline: 6px; } }
 
 /* header credits pill */
 .pill.credits b { color: var(--gold, #c8a24a); }

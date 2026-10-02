@@ -128,6 +128,12 @@ this is the running score, updated whenever work lands or scope moves.
   font controls beyond the preset skins. Font stacks allow 120 characters. Changes
   update the shared preview/export template, enter undo/autosave history, and can be
   reset to the selected skin.
+- **Editor layout polish (Oct 2).** Slide-rail controls have an opaque, bordered
+  footer; tagline and subtitle inputs now use the same full-width field style as
+  heading and body; the studio header aligns with the editor toolbar.
+- **Editor refresh recovery (Oct 2).** The existing single-page studio records the
+  active deck in the URL and a tab-scoped snapshot. Refresh restores the saved deck
+  from the server or the in-progress draft locally, including the selected slide.
 - **Fixed: the account chrome was invisible the whole time.** `#dashLink`, the
   credits pill, the email and Sign out shipped with `hidden` in the markup and were
   revealed by `html[data-auth="in"] .acct { display: inline-flex }`. Bootstrap's
