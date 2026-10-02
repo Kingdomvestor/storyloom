@@ -60,6 +60,7 @@ const state = {
 };
 
 let sb = null; // supabase browser client, or null when unconfigured
+let passwordRecoveryActive = false;
 let persistPromise = null;
 let deckRevision = 0;
 
@@ -145,6 +146,14 @@ function renderCredits() {
 }
 
 async function handleAuthEvent(event, session) {
+  if (event === 'PASSWORD_RECOVERY') {
+    passwordRecoveryActive = true;
+    await applySession(session, { navigate: false });
+    setAuthMode('update-password');
+    document.documentElement.dataset.view = 'auth';
+    return;
+  }
+
   if (event === 'SIGNED_OUT') {
     await applySession(null, { navigate: true });
     return;
@@ -159,18 +168,134 @@ async function handleAuthEvent(event, session) {
   await applySession(session, { navigate: wasSignedOut || document.documentElement.dataset.view === 'auth' });
 }
 
+function setAuthMode(mode) {
+  const form = $('#authForm');
+  const title = $('#authTitle');
+  const subtitle = $('#authSubtitle');
+  const submit = $('#authSubmit');
+  const toggle = $('#authToggle');
+  const back = $('#authBackToSignIn');
+  const resetLink = $('#authResetLink');
+  const emailField = $('#authEmailField');
+  const confirmField = $('#authConfirmField');
+  const passwordField = $('#authPasswordField');
+  const passwordInput = $('#authPassword');
+  const confirmInput = $('#authConfirmPassword');
+  const resend = $('#authResend');
+  const emailInput = $('#authEmail');
+
+  form.dataset.mode = mode;
+  $('#authErr').hidden = true;
+  $('#authMsg').hidden = true;
+  resend.hidden = true;
+
+  const isSignIn = mode === 'signin';
+  const isSignUp = mode === 'signup';
+  const isReset = mode === 'reset';
+  const isUpdatePassword = mode === 'update-password';
+
+  passwordField.hidden = isReset;
+  confirmField.hidden = !(isSignUp || isUpdatePassword);
+  emailField.hidden = isUpdatePassword;
+  back.hidden = !isReset && !isUpdatePassword;
+  toggle.hidden = isReset || isUpdatePassword;
+  resetLink.hidden = isReset || isUpdatePassword;
+  submit.textContent = isReset ? 'Send reset link' : isUpdatePassword ? 'Update password' : isSignUp ? 'Create account' : 'Login';
+  toggle.textContent = isSignIn ? 'Create account' : isSignUp ? 'Have an account? Sign in' : 'Create account';
+  title.textContent = isReset ? 'Reset your password' : isUpdatePassword ? 'Choose a new password' : isSignUp ? 'Create your account' : 'Welcome back';
+  subtitle.textContent = isReset ? 'We will email you a secure reset link.' : isUpdatePassword ? 'Choose a strong password for your account.' : isSignUp ? 'Start turning ideas into carousels.' : 'Sign in to continue';
+
+  if (isReset) {
+    emailInput.required = true;
+    passwordInput.required = false;
+    confirmInput.required = false;
+    passwordInput.value = '';
+    confirmInput.value = '';
+    passwordInput.autocomplete = 'off';
+    emailInput.focus();
+    return;
+  }
+
+  emailInput.required = !isUpdatePassword;
+  passwordInput.required = true;
+  passwordInput.autocomplete = isSignUp || isUpdatePassword ? 'new-password' : 'current-password';
+  confirmInput.required = isSignUp || isUpdatePassword;
+  if (!isSignUp && !isUpdatePassword) confirmInput.value = '';
+  emailInput.focus();
+}
+
 function wireAuth() {
   const form = $('#authForm');
   const resend = $('#authResend');
+  const passwordToggle = $('#authPasswordToggle');
+  const providerButtons = $$('.auth-provider');
+
+  form.addEventListener('input', () => {
+    $('#authErr').hidden = true;
+    $('#authMsg').hidden = true;
+  });
+
+  passwordToggle.onclick = () => {
+    const input = $('#authPassword');
+    const hidden = input.type === 'password';
+    input.type = hidden ? 'text' : 'password';
+    passwordToggle.textContent = hidden ? '🙈' : '👁';
+    input.focus();
+  };
+
+  providerButtons.forEach((button) => {
+    button.onclick = () => {
+      const provider = button.dataset.provider || 'provider';
+      setAuthMessage(`${provider.charAt(0).toUpperCase() + provider.slice(1)} sign-in is not available yet. Use email and password for now.`, { error: true });
+    };
+  });
+
   form.onsubmit = async (e) => {
     e.preventDefault();
     if (!sb) return;
     const email = $('#authEmail').value.trim();
     const password = $('#authPassword').value;
+    const confirmPassword = $('#authConfirmPassword').value;
     $('#authErr').hidden = true;
     $('#authMsg').hidden = true;
     $('#authSubmit').disabled = true;
     const mode = form.dataset.mode;
+
+    if ((mode === 'signup' || mode === 'update-password') && password !== confirmPassword) {
+      $('#authSubmit').disabled = false;
+      setAuthMessage('Passwords do not match.', { error: true });
+      return;
+    }
+
+    if (mode === 'reset') {
+      const { error } = await sb.auth.resetPasswordForEmail(email, {
+        redirectTo: new URL('/signin', window.location.origin).href,
+      });
+      $('#authSubmit').disabled = false;
+      if (error) {
+        setAuthMessage(error.message, { error: true });
+        return;
+      }
+      setAuthMessage('A reset link has been sent to your email.');
+      return;
+    }
+
+    if (mode === 'update-password') {
+      const { error } = await sb.auth.updateUser({ password });
+      $('#authSubmit').disabled = false;
+      if (error) {
+        setAuthMessage(error.message, { error: true });
+        return;
+      }
+      passwordRecoveryActive = false;
+      await sb.auth.signOut();
+      $('#authPassword').value = '';
+      $('#authConfirmPassword').value = '';
+      setAuthMode('signin');
+      setAuthMessage('Password updated. Sign in with your new password.');
+      return;
+    }
+
     const { data, error } = mode === 'signup'
       ? await sb.auth.signUp({
         email,
@@ -208,16 +333,11 @@ function wireAuth() {
     }
     setAuthMessage('Confirmation email sent. Check your inbox.');
   };
+  $('#authResetLink').onclick = () => setAuthMode('reset');
+  $('#authBackToSignIn').onclick = () => setAuthMode('signin');
   $('#authToggle').onclick = () => {
-    const to = form.dataset.mode === 'signin' ? 'signup' : 'signin';
-    form.dataset.mode = to;
-    $('#authErr').hidden = true;
-    $('#authMsg').hidden = true;
-    resend.hidden = to !== 'signup';
-    $('#authSubmit').textContent = to === 'signup' ? 'Create account' : 'Sign in';
-    $('#authToggle').textContent = to === 'signup'
-      ? 'Have an account? Sign in' : 'New here? Create an account';
-    $('#authPassword').autocomplete = to === 'signup' ? 'new-password' : 'current-password';
+    const nextMode = form.dataset.mode === 'signin' ? 'signup' : form.dataset.mode === 'signup' ? 'signin' : 'signin';
+    setAuthMode(nextMode);
   };
   $('#logoutBtn').onclick = async () => {
     if (state.deck && state.dirty && state.user) {
@@ -367,7 +487,7 @@ function deckCard(d) {
 async function openSavedDeck(id) {
   const r = await api('/api/decks/' + id);
   if (!r.ok) return;
-  openEditor(r.deck, { deckId: id });
+  await openEditor(r.deck, { deckId: id });
 }
 
 function wireDashboard() {
@@ -606,6 +726,7 @@ function scaleFrame(wrapper, iframe, width, { setWidth = true } = {}) {
 
 // ======================================================================= BOOT
 async function boot() {
+  document.documentElement.dataset.auth = 'out';
   const meta = await api('/api/meta');
   if (!meta.ok) {
     $('#composeErr').hidden = false;
@@ -657,7 +778,22 @@ async function boot() {
   }
   sb.auth.onAuthStateChange((event, session) => handleAuthEvent(event, session));
   const { data } = await sb.auth.getSession();
-  applySession(data?.session ?? null);
+  await applySession(data?.session ?? null, { navigate: !passwordRecoveryActive });
+  if (passwordRecoveryActive) {
+    setAuthMode('update-password');
+    document.documentElement.dataset.view = 'auth';
+  }
+
+  const callback = new URLSearchParams(window.location.hash.slice(1));
+  const callbackError = callback.get('error_code');
+  if (callbackError) {
+    const message = callbackError === 'otp_expired'
+      ? 'This reset link has expired or was already used. Request a new one.'
+      : callback.get('error_description')?.replace(/\+/g, ' ') || 'This authentication link could not be verified.';
+    setAuthMode('reset');
+    setAuthMessage(message, { error: true });
+    history.replaceState(null, '', `${location.pathname}${location.search}`);
+  }
 }
 
 const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
@@ -956,7 +1092,7 @@ async function generate() {
     return;
   }
   if (typeof result.credits === 'number') { state.credits = result.credits; renderCredits(); }
-  openEditor(result.deck, { ...result, autoSave: true });
+  await openEditor(result.deck, { ...result, autoSave: true });
 }
 
 // ---------------------------------------------------------------- gallery (B)
@@ -976,7 +1112,7 @@ async function loadGallery() {
     $('.meta b', card).textContent = deck.title;
     $('.meta span', card).textContent =
       `${label(deck.style_id)} · ${deck.slides.length} slides · ${label(deck.narrative_type)}`;
-    card.onclick = () => openEditor(structuredClone(deck), { source: 'template' });
+    card.onclick = async () => openEditor(structuredClone(deck), { source: 'template' });
     host.appendChild(card);
 
     const shot = $('.shot', card);
@@ -996,7 +1132,7 @@ async function loadGallery() {
 }
 
 // ===================================================================== EDITOR
-function openEditor(deck, info = {}) {
+async function openEditor(deck, info = {}) {
   clearTimeout(autosaveTimer);
   autosaveTimer = null;
   deckRevision = 0;
@@ -1022,10 +1158,10 @@ function openEditor(deck, info = {}) {
     : 'Click any text on the slide to edit it in place.';
 
   buildRail();
-  buildStyleTab();
   buildBrandTab();
   buildAiTab();
-  selectSlide(0);
+  await selectSlide(0);
+  buildStyleTab();
   fitStage();
   resetHistory();
   setAutoState('', '');
@@ -1287,7 +1423,7 @@ async function refreshAllThumbs() {
 }
 
 // ------------------------------------------------------------------- stage
-function selectSlide(i) {
+async function selectSlide(i) {
   const n = state.deck.slides.length;
   state.index = Math.max(0, Math.min(i, n - 1));
   const s = state.deck.slides[state.index];
@@ -1298,7 +1434,7 @@ function selectSlide(i) {
   $('#prevSlide').disabled = state.index === 0;
   $('#nextSlide').disabled = state.index === n - 1;
 
-  show($('#preview'), state.deck, state.index);
+  await show($('#preview'), state.deck, state.index);
   buildContentTab();
 }
 

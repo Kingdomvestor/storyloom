@@ -9,6 +9,12 @@
 
 <!-- 1. ANTI-FOUC: Set theme BEFORE paint -->
 <script src="/theme.js"></script>
+<script>
+  const authCallback = new URLSearchParams(location.hash.slice(1));
+  if (authCallback.has('access_token') || authCallback.has('error') || authCallback.has('code')) {
+    location.replace(`/signin${location.hash}`);
+  }
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />

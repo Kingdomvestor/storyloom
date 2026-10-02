@@ -29,6 +29,24 @@ after(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
+  await page.$eval('#panelTabs button[data-tab="style"]', (button) => button.click());
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('#preview');
+    return frame.contentDocument.documentElement.dataset.style === 'editorial-clean'
+      && frame.contentDocument.documentElement.dataset.ready === 'true';
+  });
+  const previewColors = await page.evaluate(() => {
+    const frame = document.querySelector('#preview');
+    const slide = frame.contentDocument.querySelector('#slide');
+    return ['--bg', '--fg', '--accent'].map((property) =>
+      frame.contentWindow.getComputedStyle(slide).getPropertyValue(property).trim().toLowerCase());
+  });
+  const paletteColors = await page.$$eval(
+    '#theme-background_hex, #theme-foreground_hex, #theme-accent_hex',
+    (inputs) => inputs.map((input) => input.value.toLowerCase()),
+  );
+  assert.deepEqual(paletteColors, previewColors);
+  await page.$eval('#panelTabs button[data-tab="content"]', (button) => button.click());
 test('autosave persists edits made while the first save is in flight', async () => {
   const writes = [];
   const savedDecks = [];
