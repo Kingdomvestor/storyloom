@@ -32,6 +32,9 @@ this is the running score, updated whenever work lands or scope moves.
 - **Auth transition consistency (Oct 2).** On boot/sign-in, keep the loading
   view visible until deck and credit data are ready; hide account chrome on
   loading/auth views so a signed-in header cannot appear beside the sign-in form.
+- **Render browser install (Oct 2).** npm `postinstall` explicitly installs the
+  Puppeteer-pinned Chrome build so Render can launch the shared renderer for
+  slide previews and PNG/PDF/ZIP downloads.
 - **Signup confirmation redirects (Sep 30).** Signup and resend return to the
   current site's `/signin` page instead of relying on Supabase's Site URL
   fallback; production and local callback URLs are documented for the allow-list.

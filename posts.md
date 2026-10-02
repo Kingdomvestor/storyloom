@@ -632,4 +632,17 @@ Status: draft
 **Images:** sign-in/loading transition before and after.
 
 ---
+
+## 2026-10-02 - The renderer needed its browser
+Status: draft
+
+> Storyloom's editor loaded on Render, but preview and downloads failed because the server had no Chrome for Puppeteer to launch.
+>
+> I added an explicit browser install to npm's postinstall step, so the deployment build installs the browser version pinned by Puppeteer.
+>
+> A server can be healthy and still be missing the one runtime dependency that makes its main feature work.
+
+**Images:** the failed render message and a successful slide preview/export.
+
+---
 f58104F56804
