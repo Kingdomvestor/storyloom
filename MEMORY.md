@@ -35,6 +35,9 @@ this is the running score, updated whenever work lands or scope moves.
 - **Render browser install (Oct 2).** npm `postinstall` and `prestart` install
   the Puppeteer-pinned Chrome build. `prestart` ensures it exists in the runtime
   cache before Render launches the server, for slide previews and downloads.
+- **Rendered slide cache (Oct 2).** A bounded, deck-keyed in-memory cache reuses
+  1080×1350 PNGs across preview and download requests. Missing slides render
+  incrementally; Chrome remains serialized to protect low-memory instances.
 - **Signup confirmation redirects (Sep 30).** Signup and resend return to the
   current site's `/signin` page instead of relying on Supabase's Site URL
   fallback; production and local callback URLs are documented for the allow-list.

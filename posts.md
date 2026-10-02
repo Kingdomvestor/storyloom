@@ -645,4 +645,17 @@ Status: draft
 **Images:** the failed render message and a successful slide preview/export.
 
 ---
+
+## 2026-10-02 - Don't render the same slide twice
+Status: draft
+
+> Preview and download both worked, but each action was asking Chrome to render the same slides again.
+>
+> Added a small bounded cache keyed to the exact deck. Previewed PNGs can now be reused by ZIP/PDF download; rendering stays one-at-a-time to keep the small server safe.
+>
+> The first render still costs what a real 1080×1350 screenshot costs. The win is avoiding repeated work.
+
+**Images:** preview followed by a cached export.
+
+---
 f58104F56804

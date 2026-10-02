@@ -35,9 +35,9 @@ const READY_TIMEOUT_MS = 15000;
  * reasons never identified — so the server keeps one instance and passes it in.
  * An injected browser is never closed here; whoever opened it owns its lifetime.
  *
- * `opts.only` renders a single slide by index and nothing else, for "download
- * this slide as a PNG". The name still carries the slide's real position, so a
- * file called slide-07.png is the seventh slide however it was exported.
+ * `opts.only` renders one or more slides by index and nothing else, for
+ * incremental rendering and "download this slide as a PNG". Names still carry
+ * each slide's real position, so slide-07.png is the seventh slide.
  */
 export async function renderDeckBuffers(deck, { browser: injected, quiet = false, only } = {}) {
   const browser =
@@ -55,10 +55,11 @@ export async function renderDeckBuffers(deck, { browser: injected, quiet = false
     await page.goto(pathToFileURL(TEMPLATE).href, { waitUntil: 'networkidle0' });
 
     const count = await page.evaluate((d) => window.STORYLOOM.setDeck(d), deck);
-    const wanted =
-      only == null
-        ? [...Array(count).keys()]
-        : [Math.min(Math.max(0, Math.round(Number(only)) || 0), count - 1)];
+    const requested = only == null ? null : Array.isArray(only) ? only : [only];
+    const wanted = requested == null
+      ? [...Array(count).keys()]
+      : [...new Set(requested.map((index) =>
+        Math.min(Math.max(0, Math.round(Number(index)) || 0), count - 1)))];
     const shots = [];
     for (const i of wanted) {
       await page.evaluate((idx) => window.STORYLOOM.renderSlide(idx), i);

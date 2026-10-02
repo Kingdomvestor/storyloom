@@ -18,6 +18,8 @@
  */
 import express from 'express';
 import puppeteer from 'puppeteer';
+import { createHash } from 'node:crypto';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
@@ -25,7 +27,7 @@ import { schema, validateDeck, deckWarnings, repairDeck } from './validate.js';
 import { generateDeck, rewriteSlide, REWRITE_PRESETS, MODEL } from './generate.js';
 import { extractArticle } from './extract.js';
 import { allDefaults, PLACEHOLDER_BRAND, STYLES } from './defaults.js';
-import { renderDeck, renderDeckBuffers } from './render.js';
+import { renderDeckBuffers } from './render.js';
 import { zipSync } from './zip.js';
 import { imagesToPdf } from './pdf.js';
 import { hasSupabase, publicConfig, getUser } from './supabase.js';
@@ -72,6 +74,110 @@ function queueRender(task) {
   const run = renderQueue.then(task, task);
   renderQueue = run.catch(() => {}); // a failed render must not poison the queue
   return run;
+}
+
+// Cache completed slides across preview and export requests. Keep the bound small
+// for Render's memory-constrained instances; rendering itself remains serialized.
+const RENDER_CACHE_MAX_BYTES = 24 * 1024 * 1024;
+const RENDER_CACHE_MAX_DECKS = 3;
+const renderedDecks = new Map();
+let renderedDeckBytes = 0;
+
+function renderCacheKey(deck) {
+  return createHash('sha256').update(JSON.stringify(deck)).digest('hex');
+}
+
+function cachedSlides(deck) {
+  const key = renderCacheKey(deck);
+  const entry = renderedDecks.get(key);
+  if (!entry) return null;
+  renderedDecks.delete(key);
+  renderedDecks.set(key, entry);
+  return entry.slides;
+}
+
+function rememberSlides(deck, shots) {
+  const key = renderCacheKey(deck);
+  const previous = renderedDecks.get(key);
+  const slides = new Map(previous?.slides ?? []);
+  for (const shot of shots) {
+    const index = Number(/^slide-(\d+)\.png$/.exec(shot.name)?.[1]) - 1;
+    if (!Number.isInteger(index) || index < 0) continue;
+    slides.set(index, shot.buffer);
+  }
+
+  const bytes = [...slides.values()].reduce((total, buffer) => total + buffer.length, 0);
+  if (bytes > RENDER_CACHE_MAX_BYTES) {
+    if (previous) {
+      renderedDeckBytes -= previous.bytes;
+      renderedDecks.delete(key);
+    }
+    return;
+  }
+
+  while (
+    (renderedDecks.size - Number(Boolean(previous)) >= RENDER_CACHE_MAX_DECKS) ||
+    renderedDeckBytes - (previous?.bytes ?? 0) + bytes > RENDER_CACHE_MAX_BYTES
+  ) {
+    const oldestKey = renderedDecks.keys().next().value;
+    if (oldestKey === undefined || oldestKey === key) break;
+    const oldest = renderedDecks.get(oldestKey);
+    renderedDeckBytes -= oldest.bytes;
+    renderedDecks.delete(oldestKey);
+  }
+
+  if (previous) renderedDeckBytes -= previous.bytes;
+  else if (renderedDecks.size >= RENDER_CACHE_MAX_DECKS) return;
+  renderedDecks.delete(key);
+  renderedDecks.set(key, { slides, bytes });
+  renderedDeckBytes += bytes;
+}
+
+async function getRenderedSlides(deck, only) {
+  const count = deck.slides.length;
+  const requested = only == null ? [...Array(count).keys()] : [only];
+  const wanted = [...new Set(requested.map((index) =>
+    Math.min(Math.max(0, Math.round(Number(index)) || 0), count - 1)))];
+  const key = renderCacheKey(deck);
+  const cached = cachedSlides(deck);
+  const missing = wanted.filter((index) => !cached?.has(index));
+  if (!missing.length) {
+    return {
+      shots: wanted.map((index) => ({
+        name: `slide-${String(index + 1).padStart(2, '0')}.png`,
+        buffer: cached.get(index),
+      })),
+      cached: true,
+    };
+  }
+
+  return queueRender(async () => {
+    const current = cachedSlides(deck);
+    const stillMissing = wanted.filter((index) => !current?.has(index));
+    let generated = [];
+    if (stillMissing.length) {
+      const browser = await getBrowser();
+      generated = await renderDeckBuffers(deck, {
+        browser,
+        quiet: true,
+        only: stillMissing.length === count ? undefined : stillMissing,
+      });
+      rememberSlides(deck, generated);
+    }
+
+    const available = new Map(current ?? []);
+    for (const shot of generated) {
+      const index = Number(/^slide-(\d+)\.png$/.exec(shot.name)?.[1]) - 1;
+      available.set(index, shot.buffer);
+    }
+    return {
+      shots: wanted.map((index) => ({
+        name: `slide-${String(index + 1).padStart(2, '0')}.png`,
+        buffer: available.get(index),
+      })),
+      cached: generated.length === 0,
+    };
+  });
 }
 
 // ------------------------------------------------------------------- endpoints
@@ -566,9 +672,12 @@ app.post('/api/render', requireUser, async (req, res) => {
 
   try {
     const started = process.hrtime.bigint();
-    const files = await queueRender(async () => {
-      const browser = await getBrowser();
-      return renderDeck(deck, outDir, { browser });
+    const { shots, cached } = await getRenderedSlides(deck);
+    mkdirSync(outDir, { recursive: true });
+    const files = shots.map(({ name: filename, buffer }) => {
+      const file = join(outDir, filename);
+      writeFileSync(file, buffer);
+      return file;
     });
     const seconds = Number(process.hrtime.bigint() - started) / 1e9;
     res.json({
@@ -577,6 +686,7 @@ app.post('/api/render', requireUser, async (req, res) => {
       count: files.length,
       urls: files.map((_f, i) => `/out/${name}/slide-${String(i + 1).padStart(2, '0')}.png`),
       seconds: Number(seconds.toFixed(2)),
+      cached,
       notes,
     });
   } catch (err) {
@@ -645,14 +755,10 @@ app.post('/api/export', requireUser, guard(async (req, res) => {
     }
   }
 
-  const shots = await queueRender(async () => {
-    const browser = await getBrowser();
-    return renderDeckBuffers(deck, {
-      browser,
-      quiet: true,
-      only: format === 'png' ? (body.index ?? 0) : undefined,
-    });
-  });
+  const { shots, cached } = await getRenderedSlides(
+    deck,
+    format === 'png' ? (body.index ?? 0) : undefined
+  );
 
   const slug = slugify(deck.title);
   const stamp = new Date().toISOString().slice(0, 10);
@@ -673,6 +779,7 @@ app.post('/api/export', requireUser, guard(async (req, res) => {
   res.setHeader('Content-Length', bytes.length);
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Storyloom-Render-Cache', cached ? 'hit' : 'miss');
   // A binary response has nowhere to put a note, and the UI needs to be able to
   // say why the watermark is there when the toggle was off.
   res.setHeader('X-Storyloom-Watermark', forced ? 'forced' : String(Boolean(deck.watermark)));

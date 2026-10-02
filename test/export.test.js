@@ -95,17 +95,24 @@ async function download(body, type) {
   assert.equal(Number(res.headers.get('content-length')), bytes.length, 'Content-Length lies');
   assert.equal(res.headers.get('cache-control'), 'no-store');
   const filename = /filename="([^"]+)"/.exec(res.headers.get('content-disposition'))?.[1];
-  return { bytes, filename, watermark: res.headers.get('x-storyloom-watermark') };
+  return {
+    bytes,
+    filename,
+    watermark: res.headers.get('x-storyloom-watermark'),
+    renderCache: res.headers.get('x-storyloom-render-cache'),
+  };
 }
 
 test('a single slide comes back as a 1080x1350 PNG named for its position', async () => {
-  const { bytes, filename, watermark } = await download({ format: 'png', deck, index: 1 }, 'image/png');
+  const { bytes, filename, watermark, renderCache } = await download(
+    { format: 'png', deck, index: 1 }, 'image/png');
   assert.equal(filename, `${SLUG}-slide-02.png`, 'the name must carry the real slide number');
   assert.deepEqual(bytes.subarray(0, 8), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
   // IHDR is the first chunk: 8 bytes of signature, then length+type, then w and h.
   assert.equal(bytes.readUInt32BE(16), 1080, 'not the schema width');
   assert.equal(bytes.readUInt32BE(20), 1350, 'not the schema height');
   assert.equal(watermark, 'true', "the fixture asks for a watermark, so it isn't 'forced'");
+  assert.equal(renderCache, 'miss');
 });
 
 test('an out-of-range index clamps to the last slide instead of failing', async () => {
@@ -115,6 +122,22 @@ test('an out-of-range index clamps to the last slide instead of failing', async 
   assert.equal(filename, `${SLUG}-slide-05.png`);
   // Degraded mode has no plans, so the toggle is honoured rather than overridden.
   assert.equal(watermark, 'false');
+});
+
+test('preview reuses a partial render and exports reuse the completed preview', async () => {
+  const preview = await post('/api/render', { deck });
+  assert.equal(preview.status, 200);
+  const previewBody = await preview.json();
+  assert.equal(previewBody.cached, false);
+  assert.equal(previewBody.count, deck.slides.length);
+
+  const { bytes, renderCache } = await download({ format: 'zip', deck }, 'application/zip');
+  assert.equal(renderCache, 'hit');
+  assert.ok(bytes.length > 0);
+
+  const repeatedPreview = await post('/api/render', { deck });
+  assert.equal(repeatedPreview.status, 200);
+  assert.equal((await repeatedPreview.json()).cached, true);
 });
 
 test('the PDF has one page per slide, and pdf.js decodes what Chrome produced', async () => {
