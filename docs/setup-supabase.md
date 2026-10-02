@@ -66,10 +66,11 @@ never commit it, never paste it into chat, and keep it out of screenshots.
 
 ## 4. Auth setting
 
-For the smoothest local test, open **Authentication -> Sign In / Providers ->
-Email** and turn **Confirm email** off. If you leave email confirmation on,
-signup still works, but the app will ask you to confirm the email before you can
-sign in.
+To let users enter Storyloom immediately after signing up, open
+**Authentication -> Sign In / Providers -> Email** and turn **Confirm email**
+off. With confirmation disabled, Supabase returns a session at signup and the
+app signs the new user in automatically. If you leave it on, users must confirm
+their email before they can sign in.
 
 When email confirmation is on, open **Authentication -> URL Configuration**:
 
@@ -83,6 +84,9 @@ here as well. On the signup screen, **Resend confirmation email** can send a
 fresh link for an existing unconfirmed account; enter the email address first.
 If a customized confirmation email template builds its own redirect URL, use
 `{{ .RedirectTo }}` instead of `{{ .SiteURL }}` so it honors the requested site.
+Check the **Reset Password** email template too: its link should use
+`{{ .ConfirmationURL }}`. Do not hardcode the project Site URL as the callback;
+that sends recovery links to `/` instead of `/signin`.
 
 ## 5. Verify
 
