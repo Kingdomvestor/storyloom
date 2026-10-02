@@ -638,7 +638,7 @@ Status: draft
 
 > Storyloom's editor loaded on Render, but preview and downloads failed because the server had no Chrome for Puppeteer to launch.
 >
-> I added an explicit browser install to npm's postinstall step, so the deployment build installs the browser version pinned by Puppeteer.
+> I added a runtime startup check as well as the build install, so Chrome is present in the same cache the running server uses.
 >
 > A server can be healthy and still be missing the one runtime dependency that makes its main feature work.
 
