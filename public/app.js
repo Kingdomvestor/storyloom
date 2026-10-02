@@ -214,6 +214,7 @@ function setAuthMode(mode) {
   emailInput.required = !isUpdatePassword;
   passwordInput.required = true;
   passwordInput.autocomplete = isSignUp || isUpdatePassword ? 'new-password' : 'current-password';
+  passwordInput.value = '';
   emailInput.focus();
 }
 
