@@ -29,6 +29,7 @@
     </a>
     <div class="topbar-right">
       <button class="theme-toggle" id="theme-toggle" data-theme-toggle type="button" aria-label="Switch color theme">Dark</button>
+      <button class="pill acct admin-only" id="adminLink" type="button">Templates</button>
       <!-- No `hidden` attribute on .acct: Bootstrap's reboot ships
           [hidden]{display:none!important}, which no author rule can undo. The
           pre-auth state is `.acct { display: none }` in app.css, flipped by
@@ -133,6 +134,27 @@
   </div>
   <p class="dashempty" id="dashEmpty" role="status" aria-live="polite" hidden></p>
   <section class="deckgrid" id="deckGrid" aria-label="Saved carousels"></section>
+</main>
+
+<!-- =============================================================== ADMIN -->
+<main class="view view-admin" id="viewAdmin">
+  <section class="admin-catalog">
+    <header class="admin-catalog-head">
+      <div>
+        <p class="dash-eyebrow">Studio administration</p>
+        <h1 id="adminTitle">Templates</h1>
+        <p id="adminDescription">Manage the decks people can start from.</p>
+      </div>
+      <button class="btn-go sm" id="adminCreateBtn" type="button">New template</button>
+    </header>
+    <nav class="admin-nav" aria-label="Admin libraries">
+      <button type="button" data-admin-page="templates" aria-current="page">Templates</button>
+      <button type="button" data-admin-page="styles">Styles</button>
+      <button class="admin-back" id="adminBackBtn" type="button">Back to studio</button>
+    </nav>
+    <p class="admin-message" id="adminMessage" role="status" aria-live="polite" hidden></p>
+    <div id="adminContent"></div>
+  </section>
 </main>
 
 <!-- ============================================================== COMPOSE -->

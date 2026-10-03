@@ -4,7 +4,7 @@ Where the build actually stands. Not the plan (that's
 `content-to-visual-generator-summary.md`) and not the agent's private memory —
 this is the running score, updated whenever work lands or scope moves.
 
-**Ship target:** Sept 20, 2026 · **Last updated:** 2026-10-02 · Budget: ₦0
+**Ship target:** Sept 20, 2026 · **Last updated:** 2026-10-03 · Budget: ₦0
 
 ---
 
@@ -134,6 +134,9 @@ this is the running score, updated whenever work lands or scope moves.
 - **Editor refresh recovery (Oct 2).** The existing single-page studio records the
   active deck in the URL and a tab-scoped snapshot. Refresh restores the saved deck
   from the server or the in-progress draft locally, including the selected slide.
+- **Explicit template entry (Oct 2).** In no-account mode, the studio now shows
+  the AI-or-template starting choice instead of loading templates below the AI
+  generator. The template gallery loads only after choosing that path.
 - **Fixed: the account chrome was invisible the whole time.** `#dashLink`, the
   credits pill, the email and Sign out shipped with `hidden` in the markup and were
   revealed by `html[data-auth="in"] .acct { display: inline-flex }`. Bootstrap's
@@ -161,6 +164,20 @@ this is the running score, updated whenever work lands or scope moves.
   protects published reads and admin writes with RLS. Custom style selection during
   generation is resolved server-side and carries the published style settings into
   the deck. The migration still needs to be run in the live Supabase project.
+
+### Admin template and style catalogs (Oct 3)
+- The dashboard now has separate Templates and Styles pages. Templates manage built-in
+  starters and studio-made decks through draft, publish, edit, archive, and restore;
+  template edits are kept as drafts until published. Styles manage reusable font,
+  palette, base-skin, and layout settings with live shared-renderer previews, plus
+  draft, publish, archive, restore, and built-in duplication. Publishing changes
+  future uses only; existing decks retain their copied theme. `/api/admin/*` remains
+  admin-gated, and layout/base-skin values are constrained by the deck schema.
+- `0005_catalog_updated_at.sql` adds catalog draft snapshots and template timestamps.
+  Admin pages and writes depend on running it after migrations 0001–0004.
+- Focused tests cover schema repair, route auth, catalog filters/lifecycle, and mobile
+  overflow. Browser coverage uses controlled API/auth stubs; live Supabase writes
+  remain unverified.
 
 ### Reliability (Sep 5)
 - **Generation latency guard (Sep 30).** Gemini defaults to a 20-second request
@@ -219,9 +236,9 @@ above. The next open work is Week C.
 ---
 
 ## Loose ends
-- Apply `supabase/migrations/0004_starter_templates.sql` in Supabase before the
-  admin template-publish action can persist records. Local tests cover built-in
-  fallback and auth gates, not the live database write.
+- Apply `supabase/migrations/0005_catalog_updated_at.sql` after 0001–0004 in Supabase
+  before the admin catalogs can read or write draft state. Local tests cover browser
+  flows with API stubs and route auth, not live database writes.
 - **What the 30 tests still do not cover:** a real model call. `test/fallback.test.js`
   stubs `globalThis.fetch` and overwrites the key with a throwaway string, so the
   chain logic is covered without quota, but nothing exercises a live generate — and

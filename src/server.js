@@ -323,6 +323,51 @@ app.get('/api/templates', requireUser, guard(async (req, res) => {
   res.json({ ok: true, decks });
 }));
 
+app.get('/api/admin/templates', requireUser, requireAccount, requireAdmin, guard(async (_req, res) => {
+  const builtIns = allDefaults().map((deck) => ({
+    id: `builtin:${deck.style_id}`,
+    name: deck.title,
+    slug: deck.style_id,
+    description: 'Storyloom starter template.',
+    status: 'published',
+    origin: 'builtin',
+    deck,
+  }));
+  const saved = await starterTemplates.listAdmin();
+  res.json({ ok: true, templates: [...builtIns, ...saved.map((row) => ({ ...row, origin: 'studio' }))] });
+}));
+
+app.post('/api/admin/templates', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
+  const body = req.body ?? {};
+  const name = String(body.name ?? '').trim();
+  if (!name || name.length > schema.properties.title.maxLength) {
+    return fail(res, 'bad_input', `Template name must be 1-${schema.properties.title.maxLength} characters.`);
+  }
+  if (!['draft', 'published'].includes(body.status)) {
+    return fail(res, 'bad_input', 'Choose draft or published status.');
+  }
+  if (!body.deck || typeof body.deck !== 'object' || Array.isArray(body.deck)) {
+    return fail(res, 'bad_deck', 'A valid deck is required.');
+  }
+  const deck = { ...body.deck, title: name, source: 'template' };
+  const checked = validateDeck(deck);
+  if (!checked.valid) return fail(res, 'bad_deck', `Invalid template deck: ${checked.errors.join('; ')}`);
+
+  try {
+    const template = await starterTemplates.create(req.user.id, {
+      name,
+      slug: body.slug,
+      description: body.description,
+      status: body.status,
+      deck,
+    });
+    res.json({ ok: true, template });
+  } catch (error) {
+    if (error.code === '23505') return fail(res, 'bad_input', 'That template slug is already in use.');
+    throw error;
+  }
+}));
+
 app.post('/api/templates', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
   const body = req.body ?? {};
   const name = String(body.name ?? '').trim();
@@ -342,8 +387,42 @@ app.post('/api/templates', requireUser, requireAccount, requireAdmin, guard(asyn
       name,
       slug: body.slug,
       description: body.description,
+      status: body.status ?? 'published',
       deck,
     });
+    res.json({ ok: true, template });
+  } catch (error) {
+    if (error.code === '23505') return fail(res, 'bad_input', 'That template slug is already in use.');
+    throw error;
+  }
+}));
+
+app.put('/api/admin/templates/:id', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
+  const body = req.body ?? {};
+  const name = String(body.name ?? '').trim();
+  if (!name || name.length > schema.properties.title.maxLength) {
+    return fail(res, 'bad_input', `Template name must be 1-${schema.properties.title.maxLength} characters.`);
+  }
+  if (!['draft', 'published', 'archived'].includes(body.status)) {
+    return fail(res, 'bad_input', 'Choose draft, published, or archived status.');
+  }
+  if (!body.deck || typeof body.deck !== 'object' || Array.isArray(body.deck)) {
+    return fail(res, 'bad_deck', 'A valid deck is required.');
+  }
+
+  const deck = { ...body.deck, title: name, source: 'template' };
+  const checked = validateDeck(deck);
+  if (!checked.valid) return fail(res, 'bad_deck', `Invalid template deck: ${checked.errors.join('; ')}`);
+
+  try {
+    const template = await starterTemplates.update(req.params.id, {
+      name,
+      slug: body.slug,
+      description: body.description,
+      status: body.status,
+      deck,
+    });
+    if (!template) return fail(res, 'not_found', 'Template not found.');
     res.json({ ok: true, template });
   } catch (error) {
     if (error.code === '23505') return fail(res, 'bad_input', 'That template slug is already in use.');
@@ -361,6 +440,83 @@ app.get('/api/styles', requireUser, guard(async (req, res) => {
 app.post('/api/styles', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
   const row = await styleStore.create(req.user.id, req.body ?? {});
   res.json({ ok: true, style: row });
+}));
+
+app.get('/api/admin/styles', requireUser, requireAccount, requireAdmin, guard(async (_req, res) => {
+  res.json({ ok: true, styles: await styleStore.listAdmin() });
+}));
+
+app.post('/api/admin/styles', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
+  const body = req.body ?? {};
+  const name = String(body.name ?? '').trim();
+  const slug = String(body.slug ?? name).trim();
+  if (!name || name.length > 60 || !slug || slug.length > 80 || !/[a-z0-9]/i.test(slug)) {
+    return fail(res, 'bad_input', 'Enter a style name and a valid slug.');
+  }
+  if (body.status !== undefined && !['draft', 'published', 'archived'].includes(body.status)) {
+    return fail(res, 'bad_input', 'Choose draft, published, or archived status.');
+  }
+  const settings = body.settings ?? {};
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return fail(res, 'bad_input', 'Style settings must be an object.');
+  }
+  if (settings.layout !== undefined && !['stack', 'centered', 'left-rail'].includes(settings.layout)) {
+    return fail(res, 'bad_input', 'Choose a supported layout.');
+  }
+  if (settings.base_style_id !== undefined
+    && !['signature-african', 'editorial-clean', 'mono-terminal'].includes(settings.base_style_id)) {
+    return fail(res, 'bad_input', 'Choose a built-in base style.');
+  }
+  for (const field of ['accent_hex', 'background_hex', 'surface_hex', 'foreground_hex']) {
+    if (settings[field] !== undefined && !/^#[0-9a-fA-F]{6}$/.test(settings[field])) {
+      return fail(res, 'bad_input', `Enter a valid ${field.replace('_hex', '')} colour.`);
+    }
+  }
+  let style;
+  try {
+    style = await styleStore.create(req.user.id, body);
+  } catch (error) {
+    if (error.code === '23505') return fail(res, 'bad_input', 'That style slug is already in use.');
+    throw error;
+  }
+  res.json({ ok: true, style });
+}));
+
+app.put('/api/admin/styles/:id', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
+  const body = req.body ?? {};
+  const name = String(body.name ?? '').trim();
+  const slug = String(body.slug ?? name).trim();
+  if (!name || name.length > 60 || !slug || slug.length > 80 || !/[a-z0-9]/i.test(slug)) {
+    return fail(res, 'bad_input', 'Enter a style name and a valid slug.');
+  }
+  if (!['draft', 'published', 'archived'].includes(body.status)) {
+    return fail(res, 'bad_input', 'Choose draft, published, or archived status.');
+  }
+  const settings = body.settings ?? {};
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+    return fail(res, 'bad_input', 'Style settings must be an object.');
+  }
+  if (settings.layout !== undefined && !['stack', 'centered', 'left-rail'].includes(settings.layout)) {
+    return fail(res, 'bad_input', 'Choose a supported layout.');
+  }
+  if (settings.base_style_id !== undefined
+    && !['signature-african', 'editorial-clean', 'mono-terminal'].includes(settings.base_style_id)) {
+    return fail(res, 'bad_input', 'Choose a built-in base style.');
+  }
+  for (const field of ['accent_hex', 'background_hex', 'surface_hex', 'foreground_hex']) {
+    if (settings[field] !== undefined && !/^#[0-9a-fA-F]{6}$/.test(settings[field])) {
+      return fail(res, 'bad_input', `Enter a valid ${field.replace('_hex', '')} colour.`);
+    }
+  }
+  let style;
+  try {
+    style = await styleStore.update(req.params.id, body);
+  } catch (error) {
+    if (error.code === '23505') return fail(res, 'bad_input', 'That style slug is already in use.');
+    throw error;
+  }
+  if (!style) return fail(res, 'not_found', 'Custom style not found.');
+  res.json({ ok: true, style });
 }));
 
 app.post('/api/extract', requireUser, async (req, res) => {
