@@ -26,7 +26,9 @@
         "background_hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
         "surface_hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
         "foreground_hex": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
-        "font_pair": { "type": "string", "maxLength": 120 }
+        "font_pair": { "type": "string", "maxLength": 120 },
+        "base_style_id": { "enum": ["signature-african", "editorial-clean", "mono-terminal"] },
+        "layout": { "enum": ["stack", "centered", "left-rail"] }
       }
     },
     "brand": {

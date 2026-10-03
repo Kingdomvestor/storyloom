@@ -72,7 +72,12 @@ test('authoring routes stay OPEN in degraded mode (Week A still works)', async (
 });
 
 test('account routes are hard-gated → 401 without a user', async () => {
-  for (const p of ['/api/decks', '/api/decks/abc']) {
+  for (const p of [
+    '/api/decks',
+    '/api/decks/abc',
+    '/api/admin/templates',
+    '/api/admin/styles',
+  ]) {
     const { status, body } = await call(p);
     assert.equal(status, 401, `${p} should be 401`);
     assert.equal(body.kind, 'unauthorized');
@@ -83,4 +88,10 @@ test('account routes are hard-gated → 401 without a user', async () => {
   });
   assert.equal(status, 401);
   assert.equal(body.kind, 'unauthorized');
+
+  const style = await call('/api/admin/styles', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.equal(style.status, 401);
+  assert.equal(style.body.kind, 'unauthorized');
 });

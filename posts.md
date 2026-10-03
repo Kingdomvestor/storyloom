@@ -684,3 +684,16 @@ Status: draft
 **Images:** the active editor before and after a browser refresh.
 
 ---
+
+## 2026-10-02 - Templates moved behind a choice
+Status: draft
+
+> In no-account mode, the studio loaded every starter template underneath the AI generator.
+>
+> That made two different ways to start look like one crowded screen.
+>
+> Now you choose AI or a template first; the template gallery only appears when you ask for it.
+
+**Images:** the start choice, then the template gallery after selection.
+
+---

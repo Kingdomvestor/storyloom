@@ -7,7 +7,7 @@
  */
 import { admin } from './supabase.js';
 
-const FIELDS = 'id, name, slug, description, status, settings, is_system, created_by, created_at, updated_at';
+const FIELDS = 'id, name, slug, description, status, settings, draft, is_system, created_by, created_at, updated_at';
 
 export const DEFAULT_STYLES = [
   { id: 'signature-african', name: 'Signature African', status: 'published', is_system: true, settings: {} },
@@ -34,6 +34,12 @@ export function normalise(input = {}) {
 
   const fontPair = String(raw.font_pair ?? '').trim().slice(0, 120);
   if (fontPair) settings.font_pair = fontPair;
+  const baseStyleId = String(raw.base_style_id ?? '').trim();
+  if (['signature-african', 'editorial-clean', 'mono-terminal'].includes(baseStyleId)) {
+    settings.base_style_id = baseStyleId;
+  }
+  const layout = String(raw.layout ?? 'stack').trim();
+  if (['stack', 'centered', 'left-rail'].includes(layout)) settings.layout = layout;
 
   const name = String(input.name ?? '').trim().slice(0, 60);
   const slugBase = String((input.slug ?? name) || 'custom-style').trim();
@@ -89,6 +95,24 @@ export async function listPublished() {
   ];
 }
 
+export async function listAdmin() {
+  const client = admin();
+  if (!client) throw new Error('Styles are not configured on this server.');
+  const { data, error } = await client.from('styles')
+    .select(FIELDS)
+    .order('updated_at', { ascending: false });
+
+  if (error) throw new Error(`styles.listAdmin: ${error.message}`);
+  return [
+    ...DEFAULT_STYLES,
+    ...(data ?? []).map((row) => ({
+      ...row,
+      is_system: Boolean(row.is_system),
+      settings: row.settings ?? {},
+    })),
+  ];
+}
+
 export async function getPublishedBySlug(slug) {
   const builtin = DEFAULT_STYLES.find((style) => style.id === slug);
   if (builtin) return builtin;
@@ -130,6 +154,46 @@ export async function create(userId, input) {
     .select(FIELDS)
     .single();
 
-  if (error) throw new Error(`styles.create: ${error.message}`);
+  if (error) {
+    const failure = new Error(`styles.create: ${error.message}`);
+    failure.code = error.code;
+    throw failure;
+  }
+  return data;
+}
+
+export async function update(id, input = {}) {
+  const client = admin();
+  if (!client) throw new Error('Styles are not configured on this server.');
+  const row = normalise(input);
+  const { data: current, error: lookupError } = await client.from('styles')
+    .select('status, is_system')
+    .eq('id', id)
+    .maybeSingle();
+  if (lookupError) throw new Error(`styles.update lookup: ${lookupError.message}`);
+  if (!current || current.is_system) return null;
+
+  let changes = { ...row, settings: row.settings, updated_at: new Date().toISOString() };
+  if (current.status === 'published' && row.status === 'draft') {
+    changes = {
+      draft: { ...row, settings: row.settings },
+      updated_at: changes.updated_at,
+    };
+  } else if (row.status === 'published' || row.status === 'archived') {
+    changes.draft = null;
+  }
+
+  const { data, error } = await client.from('styles')
+    .update(changes)
+    .eq('id', id)
+    .eq('is_system', false)
+    .select(FIELDS)
+    .maybeSingle();
+
+  if (error) {
+    const failure = new Error(`styles.update: ${error.message}`);
+    failure.code = error.code;
+    throw failure;
+  }
   return data;
 }

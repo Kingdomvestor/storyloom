@@ -46,6 +46,7 @@ const state = {
   plan: 'free',
   deckId: null,
   deck: null,
+  adminTemplate: null,
   index: 0,
   warnings: [],
   errors: [],
@@ -57,6 +58,7 @@ const state = {
   styleLibrary: [],
   isAdmin: false,
   compose: { src: 'text', slides: 'auto', narrative: 'listicle', style: 'signature-african', platform: 'linkedin' },
+  admin: { page: 'templates', filter: 'all', query: '', templates: [], styles: [], selectedStyle: null, sampleDeck: null },
 };
 
 const EDITOR_SNAPSHOT_KEY = 'storyloom.editor-snapshot';
@@ -136,11 +138,12 @@ async function applySession(session, { navigate = true } = {}) {
   }
   $('#userEmail').textContent = state.user.email;
   await loadDashboard();                        // sets credits + grid
-  if (state.user && navigate) {
-    const restored = await restoreEditorFromLocation();
-    if (!restored) document.documentElement.dataset.view = 'dashboard';
-  }
   if (sb) await loadStyleLibrary();
+  if (state.user && navigate) {
+    const restoredEditor = await restoreEditorFromLocation();
+    const restoredAdmin = restoredEditor ? false : await restoreAdminFromLocation();
+    if (!restoredEditor && !restoredAdmin) document.documentElement.dataset.view = 'dashboard';
+  }
 }
 
 function renderCredits() {
@@ -164,6 +167,8 @@ async function handleAuthEvent(event, session) {
 
   if (event === 'SIGNED_OUT') {
     clearEditorLocation();
+    state.adminTemplate = null;
+    setAdminLink(false);
     await applySession(null, { navigate: true });
     return;
   }
@@ -492,7 +497,8 @@ function updateEditorLocation() {
   url.pathname = '/studio';
   url.search = '';
   url.hash = '';
-  if (state.deckId) url.searchParams.set('deck', state.deckId);
+  if (state.adminTemplate?.id) url.searchParams.set('template', state.adminTemplate.id);
+  else if (state.deckId) url.searchParams.set('deck', state.deckId);
   else url.searchParams.set('draft', '1');
   window.history.replaceState(null, '', url);
 }
@@ -516,6 +522,7 @@ function saveEditorSnapshot() {
     sessionStorage.setItem(EDITOR_SNAPSHOT_KEY, JSON.stringify({
       version: 1,
       deckId: state.deckId,
+      adminTemplate: state.adminTemplate,
       deck: state.deck,
       index: state.index,
       dirty: state.dirty,
@@ -556,13 +563,51 @@ async function restoreEditorFromLocation() {
   const pending = (async () => {
     const params = new URLSearchParams(location.search);
     const deckId = params.get('deck');
+    const templateId = params.get('template');
     const isDraft = params.get('draft') === '1';
-    if (!deckId && !isDraft) return false;
+    if (!deckId && !templateId && !isDraft) return false;
+    if (templateId && !state.isAdmin) {
+      clearEditorLocation();
+      return false;
+    }
     if (document.documentElement.dataset.view === 'editor'
       && state.deck
-      && (deckId ? state.deckId === deckId : !state.deckId)) return true;
+      && (templateId ? state.adminTemplate?.id === templateId
+        : deckId ? state.deckId === deckId : !state.deckId && !state.adminTemplate)) return true;
 
     const snapshot = readEditorSnapshot();
+    if (templateId && snapshot?.adminTemplate?.id === templateId && snapshot.dirty) {
+      await openEditor(snapshot.deck, {
+        templateAdmin: snapshot.adminTemplate,
+        index: snapshot.index,
+        autoSave: true,
+      });
+      return true;
+    }
+    if (templateId) {
+      const result = await api('/api/admin/templates');
+      if (result.ok) {
+        const item = (result.templates ?? []).find((entry) => entry.id === templateId && entry.origin !== 'builtin');
+        if (item) {
+          const content = item.draft ? { ...item, ...item.draft } : item;
+          await openEditor(content.deck, {
+            templateAdmin: {
+              id: item.id,
+              name: content.name,
+              slug: content.slug,
+              description: content.description,
+              status: item.status,
+              hasDraft: Boolean(item.draft),
+            },
+            index: snapshot?.adminTemplate?.id === templateId ? snapshot.index : 0,
+          });
+          return true;
+        }
+      }
+      showAdminMessage('Could not restore this template. Check the library and try again.', true);
+      clearEditorLocation();
+      return false;
+    }
     if (deckId && snapshot?.deckId === deckId && snapshot.dirty) {
       await openEditor(snapshot.deck, {
         deckId,
@@ -608,6 +653,16 @@ async function restoreEditorFromLocation() {
   }
 }
 
+async function restoreAdminFromLocation() {
+  const page = new URLSearchParams(location.search).get('admin');
+  if (!page) return false;
+  if (!state.isAdmin) {
+    clearEditorLocation();
+    return false;
+  }
+  return openAdminPage(page, { navigate: false });
+}
+
 function wireDashboard() {
   $$('#deckFilters button').forEach((button) => {
     button.onclick = () => {
@@ -619,6 +674,7 @@ function wireDashboard() {
   $('#newDeckBtn').onclick = () => {
     clearEditorLocation();
     state.deckId = null;
+    state.adminTemplate = null;
     document.documentElement.dataset.view = 'compose';
     showNewDeckChoice();
   };
@@ -636,7 +692,17 @@ async function persist() {
       const payload = { title: deck.title || 'Untitled', source: deck.source, deck };
       const id = state.deckId;
       try {
-        r = id
+        if (state.adminTemplate?.id) {
+          const template = state.adminTemplate;
+          r = await api(`/api/admin/templates/${encodeURIComponent(template.id)}`, {
+            name: payload.title,
+            slug: template.slug,
+            description: template.description,
+            status: template.status === 'published' ? 'draft' : template.status,
+            deck,
+          }, { method: 'PUT' });
+          if (r.ok && template.status === 'published') template.hasDraft = true;
+        } else r = id
           ? await api('/api/decks/' + id, payload, { method: 'PUT' })
           : await api('/api/decks', payload);
       } catch (error) {
@@ -886,6 +952,7 @@ async function boot() {
   wireEditor();
   wireAuth();
   wireDashboard();
+  wireAdmin();
 
   await initSupabase(meta.supabase);
   if (!sb) {
@@ -895,8 +962,8 @@ async function boot() {
     $('#brandHome').href = '/';
     document.documentElement.dataset.auth = 'out';
     document.documentElement.dataset.view = 'compose';
-    await loadGallery();           // templates are the whole app in degraded mode
-    await restoreEditorFromLocation();
+    const restored = await restoreEditorFromLocation();
+    if (!restored) showNewDeckChoice();
     return;
   }
   sb.auth.onAuthStateChange((event, session) => handleAuthEvent(event, session));
@@ -967,11 +1034,622 @@ async function loadStyleLibrary() {
   const r = await api('/api/styles');
   if (!r.ok) return;
   state.isAdmin = Boolean(r.isAdmin);
+  setAdminLink(state.isAdmin);
   state.styleLibrary = Array.isArray(r.styles) ? r.styles : [];
   const styles = [...new Set([...(state.meta?.styles ?? []), ...state.styleLibrary.map((s) => s.slug || s.id)])];
   if (state.meta) state.meta.styles = styles;
   buildStylePicker();
   if (document.documentElement.dataset.view === 'editor' && state.deck) buildStyleTab();
+}
+
+function setAdminLink(enabled) {
+  const link = $('#adminLink');
+  if (link) link.classList.toggle('admin-ready', enabled);
+}
+
+function showAdminMessage(text, error = false) {
+  const message = $('#adminMessage');
+  if (!message) return;
+  message.textContent = text;
+  message.hidden = !text;
+  message.classList.toggle('error', error);
+}
+
+function wireAdmin() {
+  $('#adminLink').onclick = async () => {
+    if (state.deck && state.dirty && state.user) {
+      clearTimeout(autosaveTimer);
+      autosaveTimer = null;
+      const saved = await persist();
+      if (!saved.ok) {
+        showAdminMessage(`Could not leave the editor: ${saved.message}`, true);
+        scheduleAutosaveRetry(saved.message);
+        return;
+      }
+    }
+    await openAdminPage('templates');
+  };
+  $('#adminBackBtn').onclick = async () => {
+    const url = new URL(location.href);
+    url.search = '';
+    window.history.pushState(null, '', url);
+    document.documentElement.dataset.view = 'dashboard';
+    await loadDashboard();
+  };
+  $$('.admin-nav [data-admin-page]').forEach((button) => {
+    button.onclick = () => openAdminPage(button.dataset.adminPage);
+  });
+  $('#adminCreateBtn').onclick = () => {
+    if (state.admin.page === 'templates' && state.deck) renderAdminTemplateDraftForm();
+    else if (state.admin.page === 'templates') {
+      clearEditorLocation();
+      document.documentElement.dataset.view = 'dashboard';
+      $('#newDeckBtn').click();
+    }
+    else selectAdminStyle(null);
+  };
+  window.addEventListener('popstate', async () => {
+    const adminPage = new URLSearchParams(location.search).get('admin');
+    if (adminPage && state.isAdmin) return openAdminPage(adminPage, { navigate: false });
+    if (await restoreEditorFromLocation()) return;
+    if (state.user) document.documentElement.dataset.view = 'dashboard';
+  });
+}
+
+async function openAdminPage(page, { navigate = true } = {}) {
+  if (!state.isAdmin || !['templates', 'styles'].includes(page)) {
+    showAdminMessage('Admin access is required to manage these libraries.', true);
+    return false;
+  }
+  state.admin.page = page;
+  if (navigate) {
+    const url = new URL(location.href);
+    url.pathname = '/studio';
+    url.search = '';
+    url.searchParams.set('admin', page);
+    window.history.pushState(null, '', url);
+  }
+  document.documentElement.dataset.view = 'admin';
+  showAdminMessage('');
+  $$('.admin-nav [data-admin-page]').forEach((button) => {
+    if (button.dataset.adminPage === page) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+  $('#adminTitle').textContent = page === 'templates' ? 'Templates' : 'Styles';
+  $('#adminDescription').textContent = page === 'templates'
+    ? 'Manage the decks people can start from.'
+    : 'Shape the typography, layout, and palette applied to a deck.';
+  $('#adminCreateBtn').textContent = page === 'templates'
+    ? (state.deck ? 'Save current deck' : 'New from studio')
+    : 'New style';
+  return page === 'templates' ? renderAdminTemplates() : renderAdminStyles();
+}
+
+function statusBadge(status, hasDraft = false) {
+  const badge = document.createElement('span');
+  badge.className = 'admin-status';
+  badge.textContent = hasDraft ? `${status} · changes saved as draft` : status;
+  return badge;
+}
+
+function adminAction(label, action, { primary = false } = {}) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = primary ? 'btn-go sm' : 'btn-ghost sm';
+  button.textContent = label;
+  button.onclick = action;
+  return button;
+}
+
+async function renderAdminTemplates() {
+  const host = $('#adminContent');
+  host.innerHTML = '<p class="admin-empty">Loading templates…</p>';
+  const result = await api('/api/admin/templates');
+  if (!result.ok) {
+    host.innerHTML = '';
+    showAdminMessage(`Could not load templates: ${result.message}`, true);
+    return false;
+  }
+  state.admin.templates = result.templates ?? [];
+  host.innerHTML = '';
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'admin-toolbar';
+  const filters = document.createElement('div');
+  filters.className = 'admin-filters';
+  for (const [value, text] of [
+    ['all', 'All'], ['builtin', 'Built-in'], ['published', 'Published'], ['draft', 'Drafts'], ['archived', 'Archived'],
+  ]) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = text;
+    button.setAttribute('aria-pressed', String(state.admin.filter === value));
+    button.onclick = () => { state.admin.filter = value; renderAdminTemplates(); };
+    filters.appendChild(button);
+  }
+  const search = document.createElement('input');
+  search.type = 'search';
+  search.className = 'admin-search';
+  search.placeholder = 'Search templates';
+  search.setAttribute('aria-label', 'Search templates');
+  search.value = state.admin.query;
+  search.oninput = () => {
+    state.admin.query = search.value;
+    fillAdminTemplateRows(list);
+  };
+  toolbar.append(filters, search);
+  host.appendChild(toolbar);
+
+  const list = document.createElement('div');
+  list.className = 'admin-template-list';
+  host.appendChild(list);
+  fillAdminTemplateRows(list);
+  if (state.deck) renderAdminTemplateDraftForm(host, true);
+  return true;
+}
+
+function fillAdminTemplateRows(list) {
+  list.innerHTML = '';
+  const query = state.admin.query.trim().toLowerCase();
+  const items = state.admin.templates.filter((item) => {
+    const filter = state.admin.filter;
+    const matchesFilter = filter === 'all'
+      || (filter === 'builtin' ? item.origin === 'builtin'
+        : filter === 'draft' ? item.status === 'draft' || Boolean(item.draft)
+          : item.status === filter);
+    return matchesFilter && `${item.name} ${item.description ?? ''}`.toLowerCase().includes(query);
+  });
+  if (!items.length) {
+    const empty = document.createElement('p');
+    empty.className = 'admin-empty';
+    empty.textContent = 'No templates match this view.';
+    list.appendChild(empty);
+    return;
+  }
+
+  for (const item of items) {
+    const effective = item.draft ? { ...item, ...item.draft } : item;
+    const row = document.createElement('article');
+    row.className = 'admin-template-row';
+    const preview = document.createElement('div');
+    preview.className = 'admin-template-preview';
+    const frame = document.createElement('iframe');
+    frame.src = '/templates/carousel.html';
+    frame.title = `Preview: ${effective.name}`;
+    frame.tabIndex = -1;
+    preview.appendChild(frame);
+    frame.addEventListener('load', () => {
+      scaleFrame(preview, frame, preview.clientWidth);
+      show(frame, effective.deck, 0);
+    }, { once: true });
+
+    const copy = document.createElement('div');
+    copy.className = 'admin-template-copy';
+    const title = document.createElement('h2');
+    title.textContent = effective.name;
+    const description = document.createElement('p');
+    description.textContent = effective.description || 'No description yet.';
+    const meta = document.createElement('div');
+    meta.className = 'admin-template-meta';
+    const slides = document.createElement('span');
+    slides.textContent = `${effective.deck?.slides?.length ?? 0} slides`;
+    const styleName = document.createElement('span');
+    const templateStyle = effective.deck?.style_id;
+    styleName.textContent = `Default style: ${state.styleLibrary.find((style) => (style.slug || style.id) === templateStyle)?.name || label(templateStyle || 'signature-african')}`;
+    meta.append(slides, styleName, statusBadge(item.origin === 'builtin' ? 'built-in' : item.status, Boolean(item.draft)));
+    copy.append(title, description, meta);
+
+    const actions = document.createElement('div');
+    actions.className = 'admin-template-actions';
+    if (item.origin === 'builtin') {
+      actions.appendChild(adminAction('Duplicate in studio', () => openEditor(structuredClone(item.deck), { source: 'template' }), { primary: true }));
+    } else {
+      actions.appendChild(adminAction('Edit in studio', () => {
+        openEditor(structuredClone(effective.deck), {
+          templateAdmin: {
+            id: item.id,
+            name: effective.name,
+            slug: effective.slug,
+            description: effective.description,
+            status: item.status,
+            hasDraft: Boolean(item.draft),
+          },
+        });
+      }, { primary: true }));
+      if (item.status === 'published' && item.draft) {
+        actions.appendChild(adminAction('Publish changes', () => updateAdminTemplate(item, 'published')));
+      } else if (item.status !== 'published') {
+        actions.appendChild(adminAction('Publish', () => updateAdminTemplate(item, 'published')));
+      }
+      actions.appendChild(adminAction(item.status === 'archived' ? 'Restore' : 'Archive',
+        () => updateAdminTemplate(item, item.status === 'archived' ? 'published' : 'archived')));
+    }
+    row.append(preview, copy, actions);
+    list.appendChild(row);
+  }
+}
+
+async function updateAdminTemplate(item, status) {
+  const effective = item.draft ? { ...item, ...item.draft } : item;
+  const result = await api(`/api/admin/templates/${encodeURIComponent(item.id)}`, {
+    name: effective.name,
+    slug: effective.slug,
+    description: effective.description,
+    status,
+    deck: effective.deck,
+  }, { method: 'PUT' });
+  if (!result.ok) return showAdminMessage(`Could not update template: ${result.message}`, true);
+  showAdminMessage(status === 'published' ? 'Template published for new users.' : 'Template archived from new-deck choices.');
+  await renderAdminTemplates();
+}
+
+function renderAdminTemplateDraftForm(host = $('#adminContent'), append = false) {
+  if (!state.deck) {
+    showAdminMessage('Open or create a carousel in the studio first, then return here to save it as a template.');
+    return;
+  }
+  let form = $('#adminTemplateDraftForm');
+  if (form) {
+    form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  form = document.createElement('form');
+  form.id = 'adminTemplateDraftForm';
+  form.className = 'admin-style-form admin-create-form';
+  const draftName = document.createElement('input');
+  draftName.name = 'name';
+  draftName.maxLength = 60;
+  draftName.required = true;
+  draftName.value = state.deck.title || '';
+  draftName.setAttribute('aria-label', 'Template name');
+  const slug = document.createElement('input');
+  slug.name = 'slug';
+  slug.maxLength = 40;
+  slug.required = true;
+  slug.value = (draftName.value || 'new-template').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+  slug.setAttribute('aria-label', 'Template slug');
+  const description = document.createElement('textarea');
+  description.name = 'description';
+  description.maxLength = 220;
+  description.placeholder = 'What is this deck a good starting point for?';
+  description.setAttribute('aria-label', 'Template description');
+  const save = document.createElement('button');
+  save.type = 'submit';
+  save.className = 'btn-go sm';
+  save.textContent = 'Save as draft';
+  form.append(draftName, slug, description, save);
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    save.disabled = true;
+    const result = await api('/api/admin/templates', {
+      name: draftName.value.trim(),
+      slug: slug.value.trim(),
+      description: description.value.trim(),
+      status: 'draft',
+      deck: { ...structuredClone(state.deck), title: draftName.value.trim(), source: 'template' },
+    });
+    save.disabled = false;
+    if (!result.ok) return showAdminMessage(`Could not save template: ${result.message}`, true);
+    state.admin.filter = 'draft';
+    showAdminMessage('Template saved as a draft.');
+    await renderAdminTemplates();
+  };
+  host.appendChild(form);
+  if (!append) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function renderAdminStyles() {
+  const host = $('#adminContent');
+  host.innerHTML = '<p class="admin-empty">Loading styles…</p>';
+  const [stylesResult, templatesResult] = await Promise.all([
+    api('/api/admin/styles'),
+    api('/api/admin/templates'),
+  ]);
+  if (!stylesResult.ok || !templatesResult.ok) {
+    host.innerHTML = '';
+    showAdminMessage(`Could not load the style workbench: ${stylesResult.message || templatesResult.message}`, true);
+    return false;
+  }
+  state.admin.styles = stylesResult.styles ?? [];
+  state.admin.templates = templatesResult.templates ?? [];
+  const defaults = await api('/api/defaults');
+  if (!defaults.ok) {
+    host.innerHTML = '';
+    showAdminMessage(`Could not load a preview deck: ${defaults.message}`, true);
+    return false;
+  }
+  state.admin.sampleDeck = defaults.decks?.[0] ?? null;
+  host.innerHTML = '';
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'admin-toolbar';
+  const filters = document.createElement('div');
+  filters.className = 'admin-filters';
+  for (const [value, text] of [['all', 'All'], ['published', 'Published'], ['draft', 'Drafts'], ['archived', 'Archived']]) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = text;
+    button.setAttribute('aria-pressed', String(state.admin.filter === value));
+    button.onclick = () => { state.admin.filter = value; renderAdminStyles(); };
+    filters.appendChild(button);
+  }
+  toolbar.appendChild(filters);
+  host.appendChild(toolbar);
+
+  const layout = document.createElement('div');
+  layout.className = 'admin-style-layout';
+  const list = document.createElement('div');
+  list.className = 'admin-style-list';
+  const listTitle = document.createElement('h2');
+  listTitle.textContent = 'Style library';
+  list.appendChild(listTitle);
+  for (const style of state.admin.styles.filter((item) => {
+    if (state.admin.filter === 'all') return true;
+    if (item.is_system) return state.admin.filter === 'published';
+    if (state.admin.filter === 'draft') return item.status === 'draft' || Boolean(item.draft);
+    return item.status === state.admin.filter;
+  })) {
+    const row = document.createElement('div');
+    row.className = 'admin-style-row';
+    const select = document.createElement('button');
+    select.type = 'button';
+    select.className = 'style-library-item';
+    select.setAttribute('aria-pressed', String(state.admin.selectedStyle?.id === style.id));
+    select.innerHTML = `<span class="style-swatch" aria-hidden="true"></span><span class="style-copy"><strong></strong><small></small></span>`;
+    const copy = $('.style-copy', select);
+    $('strong', copy).textContent = style.name;
+    $('small', copy).textContent = style.is_system ? 'Built-in · read-only' : `${style.status}${style.draft ? ' · changes saved as draft' : ''}`;
+    const settings = style.draft?.settings ?? style.settings ?? {};
+    $('.style-swatch', select).style.setProperty('--style-bg', settings.background_hex || '#101a33');
+    $('.style-swatch', select).style.setProperty('--style-accent', settings.accent_hex || '#d9a23b');
+    $('.style-swatch', select).style.setProperty('--style-fg', settings.foreground_hex || '#f0e7d4');
+    select.onclick = () => selectAdminStyle(style);
+    row.appendChild(select);
+    if (style.is_system) row.appendChild(adminAction('Duplicate', () => selectAdminStyle(style, { duplicate: true })));
+    else row.appendChild(adminAction(
+      style.status === 'archived' ? 'Restore' : 'Archive',
+      () => changeAdminStyleStatus(style, style.status === 'archived' ? 'published' : 'archived'),
+    ));
+    list.appendChild(row);
+  }
+
+  const workbench = document.createElement('div');
+  workbench.className = 'admin-style-workbench';
+  workbench.innerHTML = `
+    <div class="admin-style-preview">
+      <div class="admin-style-preview-frame"><iframe id="adminStylePreview" src="/templates/carousel.html" title="Live style preview" scrolling="no"></iframe></div>
+      <label class="admin-form-wide">Preview on a template<select id="adminStyleSample"></select></label>
+    </div>
+    <form class="admin-style-form" id="adminStyleForm"></form>
+  `;
+  layout.append(list, workbench);
+  host.appendChild(layout);
+
+  const sampleSelect = $('#adminStyleSample', workbench);
+  const publishedTemplates = state.admin.templates.filter((item) => item.status === 'published');
+  for (const item of publishedTemplates) {
+    const option = document.createElement('option');
+    option.value = item.id;
+    option.textContent = item.name;
+    sampleSelect.appendChild(option);
+  }
+  if (publishedTemplates.length) {
+    const selected = publishedTemplates.find((item) => item.origin === 'builtin') ?? publishedTemplates[0];
+    sampleSelect.value = selected.id;
+    state.admin.sampleDeck = selected.deck;
+  }
+  sampleSelect.onchange = () => {
+    const selected = state.admin.templates.find((item) => item.id === sampleSelect.value);
+    if (selected) {
+      state.admin.sampleDeck = selected.deck;
+      refreshAdminStylePreview();
+    }
+  };
+
+  const frame = $('#adminStylePreview', workbench);
+  frame.addEventListener('load', () => {
+    const wrapper = $('.admin-style-preview-frame', workbench);
+    scaleFrame(wrapper, frame, wrapper.clientWidth);
+    refreshAdminStylePreview();
+  }, { once: true });
+  new ResizeObserver(() => {
+    const wrapper = $('.admin-style-preview-frame', workbench);
+    scaleFrame(wrapper, frame, wrapper.clientWidth);
+  }).observe($('.admin-style-preview-frame', workbench));
+  if (state.admin.selectedStyle) fillAdminStyleForm(state.admin.selectedStyle);
+  else selectAdminStyle(null);
+  return true;
+}
+
+function builtinStyleSettings(style) {
+  const palette = {
+    'signature-african': ['#101A33', '#F0E7D4', '#D9A23B'],
+    'editorial-clean': ['#F7F4EC', '#1B1A17', '#BD4A2E'],
+    'mono-terminal': ['#0A0C0B', '#E6EDE9', '#3DDC84'],
+  }[style.id] ?? ['#101A33', '#F0E7D4', '#D9A23B'];
+  return {
+    base_style_id: style.id,
+    background_hex: palette[0],
+    foreground_hex: palette[1],
+    accent_hex: palette[2],
+    layout: 'stack',
+  };
+}
+
+function selectAdminStyle(style, { duplicate = false } = {}) {
+  const form = $('#adminStyleForm');
+  if (!form) return;
+  state.admin.selectedStyle = duplicate ? null : style;
+  fillAdminStyleForm(style, duplicate);
+}
+
+function fillAdminStyleForm(style, duplicate = false) {
+  const form = $('#adminStyleForm');
+  if (!form) return;
+  const sourceSettings = style?.draft?.settings ?? style?.settings ?? {};
+  const settings = style?.is_system ? builtinStyleSettings(style) : sourceSettings;
+  const initial = {
+    name: duplicate ? `${style.name} variation` : (style?.draft?.name ?? style?.name ?? ''),
+    slug: duplicate ? '' : (style?.draft?.slug ?? style?.slug ?? ''),
+    description: duplicate ? '' : (style?.draft?.description ?? style?.description ?? ''),
+    settings,
+  };
+  const locked = Boolean(style?.is_system) && !duplicate;
+  form.innerHTML = `
+    <fieldset><legend>Style identity</legend>
+      <label>Name<input name="name" maxlength="60" required></label>
+      <label>Slug<input name="slug" maxlength="40" required></label>
+      <label class="admin-form-wide">Description<textarea name="description" maxlength="220" rows="2"></textarea></label>
+    </fieldset>
+    <fieldset><legend>Typography and layout</legend>
+      <label>Base look<select name="base_style_id">
+        <option value="signature-african">Signature African</option>
+        <option value="editorial-clean">Editorial Clean</option>
+        <option value="mono-terminal">Mono Terminal</option>
+      </select></label>
+      <label>Layout<select name="layout">
+        <option value="stack">Balanced stack</option>
+        <option value="centered">Centered</option>
+        <option value="left-rail">Left rail</option>
+      </select></label>
+      <label class="admin-form-wide">Font family<input name="font_pair" maxlength="120" placeholder="Use the base look's fonts"></label>
+    </fieldset>
+    <fieldset><legend>Palette</legend>
+      <label>Background<input name="background_hex" type="color"></label>
+      <label>Text<input name="foreground_hex" type="color"></label>
+      <label>Accent<input name="accent_hex" type="color"></label>
+      <label>Surface<input name="surface_hex" type="color" value="#1f2937"></label>
+    </fieldset>
+    <div class="admin-style-actions">
+      <button type="button" class="btn-ghost sm" data-save-status="draft"></button>
+      <button type="submit" class="btn-go sm" data-save-status="published"></button>
+      <button type="button" class="btn-ghost sm" data-save-status="archived"></button>
+    </div>
+  `;
+  for (const [name, value] of Object.entries({
+    name: initial.name,
+    slug: initial.slug,
+    description: initial.description,
+    base_style_id: settings.base_style_id || 'signature-african',
+    layout: settings.layout || 'stack',
+    font_pair: settings.font_pair || '',
+    background_hex: settings.background_hex || '#101a33',
+    foreground_hex: settings.foreground_hex || '#f0e7d4',
+    accent_hex: settings.accent_hex || '#d9a23b',
+    surface_hex: settings.surface_hex || '#1f2937',
+  })) {
+    const control = $(`[name="${name}"]`, form);
+    if (control) control.value = value;
+  }
+  const draftButton = $('[data-save-status="draft"]', form);
+  const publishButton = $('[data-save-status="published"]', form);
+  const archiveButton = $('[data-save-status="archived"]', form);
+  draftButton.textContent = style?.status === 'published' ? 'Save changes as draft' : 'Save draft';
+  publishButton.textContent = style?.status === 'archived'
+    ? 'Restore and publish'
+    : style?.status === 'published' && style.draft ? 'Publish changes' : 'Publish style';
+  archiveButton.textContent = 'Archive style';
+  archiveButton.hidden = !style || style.is_system || style.status === 'archived';
+  if (style?.status === 'archived') archiveButton.hidden = true;
+  if (locked) {
+    for (const control of $$('input, select, textarea', form)) control.disabled = true;
+    draftButton.disabled = true;
+    publishButton.disabled = true;
+    archiveButton.disabled = true;
+    draftButton.hidden = true;
+    publishButton.hidden = true;
+    const note = document.createElement('p');
+    note.className = 'admin-empty';
+    note.textContent = 'Built-in styles are read-only. Duplicate this style to customize it.';
+    form.appendChild(note);
+  }
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    saveAdminStyle(form, 'published', publishButton);
+  };
+  draftButton.onclick = () => saveAdminStyle(form, 'draft', draftButton);
+  archiveButton.onclick = () => saveAdminStyle(form, 'archived', archiveButton);
+  form.oninput = refreshAdminStylePreview;
+  form.onchange = refreshAdminStylePreview;
+  refreshAdminStylePreview();
+}
+
+function styleFormValue(form) {
+  const data = new FormData(form);
+  const name = String(data.get('name') ?? '').trim();
+  const slug = String(data.get('slug') ?? '').trim()
+    || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-$/g, '').slice(0, 40);
+  return {
+    name,
+    slug,
+    description: String(data.get('description') ?? '').trim(),
+    status: 'draft',
+    settings: {
+      base_style_id: String(data.get('base_style_id') ?? 'signature-african'),
+      layout: String(data.get('layout') ?? 'stack'),
+      font_pair: String(data.get('font_pair') ?? '').trim(),
+      background_hex: String(data.get('background_hex') ?? ''),
+      foreground_hex: String(data.get('foreground_hex') ?? ''),
+      accent_hex: String(data.get('accent_hex') ?? ''),
+      surface_hex: String(data.get('surface_hex') ?? ''),
+    },
+  };
+}
+
+async function saveAdminStyle(form, status, button) {
+  const style = styleFormValue(form);
+  if (!style.name || !style.slug) return showAdminMessage('Enter a style name and slug.', true);
+  style.status = status;
+  button.disabled = true;
+  const selected = state.admin.selectedStyle;
+  const result = selected && !selected.is_system
+    ? await api(`/api/admin/styles/${encodeURIComponent(selected.id)}`, style, { method: 'PUT' })
+    : await api('/api/admin/styles', style);
+  button.disabled = false;
+  if (!result.ok) return showAdminMessage(`Could not save style: ${result.message}`, true);
+  state.admin.selectedStyle = result.style;
+  state.admin.filter = status === 'archived' ? 'archived' : status === 'draft' ? 'draft' : 'published';
+  showAdminMessage(status === 'published'
+    ? 'Style published for new uses.'
+    : status === 'archived' ? 'Style archived from new uses.' : 'Style changes saved as a draft.');
+  await renderAdminStyles();
+}
+
+async function changeAdminStyleStatus(style, status) {
+  const source = style.draft ? { ...style, ...style.draft } : style;
+  const payload = {
+    name: source.name,
+    slug: source.slug,
+    description: source.description,
+    status,
+    settings: source.settings ?? {},
+  };
+  const result = await api(`/api/admin/styles/${encodeURIComponent(style.id)}`, payload, { method: 'PUT' });
+  if (!result.ok) return showAdminMessage(`Could not update style: ${result.message}`, true);
+  state.admin.selectedStyle = result.style;
+  state.admin.filter = status;
+  showAdminMessage(status === 'published' ? 'Style restored for new uses.' : 'Style archived from new uses.');
+  await renderAdminStyles();
+}
+
+async function refreshAdminStylePreview() {
+  const iframe = $('#adminStylePreview');
+  const form = $('#adminStyleForm');
+  if (!iframe || !form || !state.admin.sampleDeck) return;
+  const style = styleFormValue(form);
+  const preview = structuredClone(state.admin.sampleDeck);
+  const selected = state.admin.selectedStyle;
+  if (selected && !selected.is_system) {
+    preview.style_id = selected.slug || style.slug || 'admin-preview';
+    preview.theme = style.settings;
+  } else if (selected?.is_system) {
+    preview.style_id = selected.id;
+    delete preview.theme;
+  } else {
+    preview.style_id = style.slug || style.settings.base_style_id;
+    preview.theme = style.settings;
+  }
+  await show(iframe, preview, 0);
 }
 
 function buildStylePicker() {
@@ -1263,13 +1941,14 @@ async function openEditor(deck, info = {}) {
   state.deck = deck;
   state.index = Number.isInteger(info.index) ? info.index : 0;
   state.deckId = info.deckId ?? null;
+  state.adminTemplate = info.templateAdmin ?? null;
   state.dirty = false;
   document.documentElement.dataset.view = 'editor';
   updateEditorLocation();
 
   // A new deck inherits the default brand; a saved one never does. Re-applying it
   // on open would resurrect a footer the user deliberately cleared three edits ago.
-  if (!info.deckId && !deck.brand && state.defaultBrand) deck.brand = { ...state.defaultBrand };
+  if (!info.deckId && !info.templateAdmin && !deck.brand && state.defaultBrand) deck.brand = { ...state.defaultBrand };
 
   $('#deckTitle').value = deck.title ?? '';
   const src = $('#deckSource');
@@ -1310,8 +1989,14 @@ function wireEditor() {
         return;
       }
     }
+    const editingTemplate = Boolean(state.adminTemplate);
     clearEditorLocation();
     state.deckId = null;
+    state.adminTemplate = null;
+    if (editingTemplate && state.isAdmin) {
+      await openAdminPage('templates');
+      return;
+    }
     document.documentElement.dataset.view = state.user ? 'dashboard' : 'compose';
     if (state.user) loadDashboard();
   };
@@ -2129,141 +2814,6 @@ function buildStyleTab() {
   themeActions.appendChild(resetTheme);
   themeControls.appendChild(themeActions);
   host.appendChild(themeControls);
-
-  if (state.isAdmin) {
-    const adminWrap = document.createElement('div');
-    adminWrap.className = 'style-admin';
-
-    const adminHead = document.createElement('div');
-    adminHead.className = 'subhead';
-    adminHead.textContent = 'Custom styles';
-    adminWrap.appendChild(adminHead);
-
-    const library = document.createElement('div');
-    library.className = 'style-library';
-    const saved = Array.isArray(state.styleLibrary) ? state.styleLibrary : [];
-    if (!saved.length) {
-      const empty = document.createElement('div');
-      empty.className = 'style-library-empty';
-      empty.textContent = 'No published styles yet. Create the first one below.';
-      library.appendChild(empty);
-    } else {
-      for (const style of saved) {
-        const item = document.createElement('button');
-        item.type = 'button';
-        item.className = 'style-library-item';
-        item.innerHTML = `
-          <span class="style-swatch" style="--style-bg:${style.settings?.background_hex || '#0f172a'}; --style-accent:${style.settings?.accent_hex || '#d7a35f'}; --style-fg:${style.settings?.foreground_hex || '#f7f3ee'}"></span>
-          <span class="style-copy">
-            <strong>${(style.name || style.slug || 'Custom style').replace(/-/g, ' ')}</strong>
-            <small>${style.slug || style.id}</small>
-          </span>
-        `;
-        item.onclick = async () => {
-          state.deck.style_id = style.slug || style.id;
-          state.deck.theme = style.settings || {};
-          await refreshThemePreview();
-          const scrollTop = host.scrollTop;
-          buildStyleTab();
-          host.scrollTop = scrollTop;
-        };
-        library.appendChild(item);
-      }
-    }
-    adminWrap.appendChild(library);
-
-    const form = document.createElement('form');
-    form.className = 'style-form';
-    form.innerHTML = `
-      <div class="style-form-grid">
-        <label>Name<input name="name" placeholder="Warm editorial" required /></label>
-        <label>Slug<input name="slug" placeholder="warm-editorial" required /></label>
-      </div>
-      <div class="style-form-grid compact">
-        <label>Background<input name="background_hex" type="color" value="#0f172a" /></label>
-        <label>Surface<input name="surface_hex" type="color" value="#1f2937" /></label>
-        <label>Foreground<input name="foreground_hex" type="color" value="#f8fafc" /></label>
-        <label>Accent<input name="accent_hex" type="color" value="#d7a35f" /></label>
-      </div>
-      <label>Font family<input name="font_pair" value="Poppins, sans-serif" /></label>
-      <button type="submit" class="btn-go sm">Publish style</button>
-    `;
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      const fd = new FormData(form);
-      const body = {
-        name: String(fd.get('name') ?? '').trim(),
-        slug: String(fd.get('slug') ?? '').trim(),
-        status: 'published',
-        settings: {
-          background_hex: String(fd.get('background_hex') ?? '#0f172a'),
-          surface_hex: String(fd.get('surface_hex') ?? '#1f2937'),
-          foreground_hex: String(fd.get('foreground_hex') ?? '#f8fafc'),
-          accent_hex: String(fd.get('accent_hex') ?? '#d7a35f'),
-          font_pair: String(fd.get('font_pair') ?? 'Poppins, sans-serif').trim(),
-        },
-      };
-      if (!body.name || !body.slug) return;
-      const r = await api('/api/styles', body);
-      if (!r.ok) {
-        $('#stageNote').textContent = `Style save failed — ${r.message}`;
-        return;
-      }
-      form.reset();
-      await loadStyleLibrary();
-      if (state.deck) {
-        state.deck.style_id = r.style.slug || r.style.id || state.deck.style_id;
-        state.deck.theme = r.style.settings || state.deck.theme || {};
-        await show($('#preview'), state.deck, state.index);
-        refreshAllThumbs();
-      }
-    };
-    adminWrap.appendChild(form);
-
-    const templateHead = document.createElement('div');
-    templateHead.className = 'subhead';
-    templateHead.textContent = 'Publish current deck as template';
-    adminWrap.appendChild(templateHead);
-
-    const templateForm = document.createElement('form');
-    templateForm.className = 'style-form template-form';
-    templateForm.innerHTML = `
-      <label>Template name<input name="name" maxlength="60" placeholder="A name for the gallery" required /></label>
-      <label>Slug<input name="slug" maxlength="40" placeholder="generated-from-name" /></label>
-      <label>Description<textarea name="description" maxlength="220" rows="2"></textarea></label>
-      <button type="submit" class="btn-go sm">Publish current deck</button>
-    `;
-    templateForm.onsubmit = async (e) => {
-      e.preventDefault();
-      const submit = $('button[type="submit"]', templateForm);
-      const fd = new FormData(templateForm);
-      const name = String(fd.get('name') ?? '').trim();
-      const deck = structuredClone(state.deck);
-      deck.title = name;
-      deck.source = 'template';
-      submit.disabled = true;
-      try {
-        const r = await api('/api/templates', {
-          name,
-          slug: String(fd.get('slug') ?? '').trim(),
-          description: String(fd.get('description') ?? '').trim(),
-          deck,
-        });
-        if (!r.ok) {
-          $('#stageNote').textContent = `Template publish failed — ${r.message}`;
-          return;
-        }
-        templateForm.reset();
-        $('#stageNote').textContent = `Published “${r.template.name}” to the starter gallery.`;
-      } catch (error) {
-        $('#stageNote').textContent = `Template publish failed — ${error.message || 'Network request failed.'}`;
-      } finally {
-        submit.disabled = false;
-      }
-    };
-    adminWrap.appendChild(templateForm);
-    host.appendChild(adminWrap);
-  }
 
   const pHead = document.createElement('div');
   pHead.className = 'subhead';

@@ -151,6 +151,12 @@ export function repairDeck(deck) {
     for (const key of Object.keys(allowed)) {
       if (typeof d.theme[key] === 'string') theme[key] = clamp(d.theme[key], allowed[key].maxLength ?? Infinity);
     }
+    if (theme.base_style_id && !['signature-african', 'editorial-clean', 'mono-terminal'].includes(theme.base_style_id)) {
+      delete theme.base_style_id;
+    }
+    if (theme.layout && !['stack', 'centered', 'left-rail'].includes(theme.layout)) {
+      delete theme.layout;
+    }
     for (const key of ['accent_hex', 'background_hex', 'surface_hex', 'foreground_hex']) {
       if (theme[key] && !/^#[0-9a-fA-F]{6}$/.test(theme[key])) {
         const bare = theme[key].replace(/^#/, '');

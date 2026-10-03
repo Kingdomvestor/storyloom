@@ -46,6 +46,14 @@
   .stack > :first-child { margin-top: auto; }
   .stack > :last-child { margin-bottom: auto; }
 
+  [data-layout="centered"] #slide { text-align: center; }
+  [data-layout="centered"] .stack { align-items: center; }
+  [data-layout="centered"] .tagline,
+  [data-layout="centered"] .cta { align-self: center; }
+  [data-layout="centered"] .bullets { align-self: stretch; text-align: left; }
+  [data-layout="left-rail"] #slide { padding-left: 144px; }
+  [data-layout="left-rail"] .tagline { padding-bottom: 18px; border-bottom: 2px solid currentColor; }
+
   .tagline {
     font-weight: 700;
     letter-spacing: .16em;
@@ -353,7 +361,8 @@
     const s = deck.slides[index];
     const styleId = deck.style_id || "signature-african";
     const theme = deck.theme || {};
-    root.setAttribute("data-style", styleId);
+    root.setAttribute("data-style", theme.base_style_id || styleId);
+    root.setAttribute("data-layout", theme.layout || "stack");
 
     for (const [property, value] of [
       ["--bg", theme.background_hex],

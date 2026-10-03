@@ -22,8 +22,9 @@ Open **SQL Editor -> New query** and run the migrations in order:
 2. [`supabase/migrations/0002_brands_plan.sql`](../supabase/migrations/0002_brands_plan.sql)
 3. [`supabase/migrations/0003_styles_admin.sql`](../supabase/migrations/0003_styles_admin.sql)
 4. [`supabase/migrations/0004_starter_templates.sql`](../supabase/migrations/0004_starter_templates.sql)
+5. [`supabase/migrations/0005_catalog_updated_at.sql`](../supabase/migrations/0005_catalog_updated_at.sql)
 
-Both migrations are safe to rerun on an existing project. Together they create or repair:
+The migrations are safe to rerun on an existing project. Together they create or repair:
 
 - `profiles` - one row per auth user, with `email`, `credits`, `created_at`, and
   `updated_at`.
@@ -31,6 +32,7 @@ Both migrations are safe to rerun on an existing project. Together they create o
 - `brands` - reusable brand details, plus the `profiles.plan` field.
 - `styles` - admin-published visual token sets; the three built-in skins remain available without database rows.
 - `starter_templates` - admin-published, schema-validated starter decks shown beside the built-ins.
+- catalog draft snapshots and `updated_at` timestamps used by admin editing.
 - a signup trigger that grants every new user their 50 credits.
 - a backfill step for auth users that already existed before the trigger worked.
 - `ensure_profile`, `spend_credit`, and `add_credit` RPCs.
