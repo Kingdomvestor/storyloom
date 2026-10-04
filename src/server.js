@@ -36,6 +36,7 @@ import * as decks from './decks.js';
 import * as brands from './brands.js';
 import * as styleStore from './styles.js';
 import * as starterTemplates from './starter-templates.js';
+import * as feedback from './feedback.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..');
@@ -275,6 +276,8 @@ app.get('/api/meta', (_req, res) => {
     hasApiKey: Boolean(process.env.GEMINI_API_KEY),
     supabase: publicConfig(),
     styles: STYLES,
+    styleSettings: styleStore.STYLE_SETTINGS_CONTRACT,
+    layouts: schema.properties.layout.enum,
     narratives: schema.properties.narrative_type.enum,
     platforms: schema.properties.platform.enum,
     slides: { min: schema.properties.slides.minItems, max: schema.properties.slides.maxItems },
@@ -316,9 +319,8 @@ app.get('/api/templates', requireUser, guard(async (req, res) => {
   const saved = await starterTemplates.listPublished();
 
   for (const row of saved) {
-    if (!row.deck || typeof row.deck !== 'object' || Array.isArray(row.deck)) continue;
-    const deck = { ...row.deck, title: row.name, source: 'template' };
-    if (validateDeck(deck).valid) decks.push(deck);
+    const deck = starterTemplates.publishedTemplateDeck(row);
+    if (deck) decks.push(deck);
   }
   res.json({ ok: true, decks });
 }));
@@ -337,14 +339,15 @@ app.get('/api/admin/templates', requireUser, requireAccount, requireAdmin, guard
   res.json({ ok: true, templates: [...builtIns, ...saved.map((row) => ({ ...row, origin: 'studio' }))] });
 }));
 
-app.post('/api/admin/templates', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
+const createTemplateHandler = (defaultStatus, allowedStatuses = ['draft', 'published']) => guard(async (req, res) => {
   const body = req.body ?? {};
   const name = String(body.name ?? '').trim();
   if (!name || name.length > schema.properties.title.maxLength) {
     return fail(res, 'bad_input', `Template name must be 1-${schema.properties.title.maxLength} characters.`);
   }
-  if (!['draft', 'published'].includes(body.status)) {
-    return fail(res, 'bad_input', 'Choose draft or published status.');
+  const status = body.status ?? defaultStatus;
+  if (!allowedStatuses.includes(status)) {
+    return fail(res, 'bad_input', `Choose ${allowedStatuses.join(', ')} status.`);
   }
   if (!body.deck || typeof body.deck !== 'object' || Array.isArray(body.deck)) {
     return fail(res, 'bad_deck', 'A valid deck is required.');
@@ -358,7 +361,7 @@ app.post('/api/admin/templates', requireUser, requireAccount, requireAdmin, guar
       name,
       slug: body.slug,
       description: body.description,
-      status: body.status,
+      status,
       deck,
     });
     res.json({ ok: true, template });
@@ -366,36 +369,13 @@ app.post('/api/admin/templates', requireUser, requireAccount, requireAdmin, guar
     if (error.code === '23505') return fail(res, 'bad_input', 'That template slug is already in use.');
     throw error;
   }
-}));
+});
 
-app.post('/api/templates', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
-  const body = req.body ?? {};
-  const name = String(body.name ?? '').trim();
-  if (!name || name.length > schema.properties.title.maxLength) {
-    return fail(res, 'bad_input', `Template name must be 1-${schema.properties.title.maxLength} characters.`);
-  }
-  if (!body.deck || typeof body.deck !== 'object' || Array.isArray(body.deck)) {
-    return fail(res, 'bad_deck', 'A valid deck is required.');
-  }
+app.post('/api/admin/templates', requireUser, requireAccount, requireAdmin, createTemplateHandler('draft'));
 
-  const deck = { ...body.deck, title: name, source: 'template' };
-  const checked = validateDeck(deck);
-  if (!checked.valid) return fail(res, 'bad_deck', `Invalid template deck: ${checked.errors.join('; ')}`);
-
-  try {
-    const template = await starterTemplates.create(req.user.id, {
-      name,
-      slug: body.slug,
-      description: body.description,
-      status: body.status ?? 'published',
-      deck,
-    });
-    res.json({ ok: true, template });
-  } catch (error) {
-    if (error.code === '23505') return fail(res, 'bad_input', 'That template slug is already in use.');
-    throw error;
-  }
-}));
+// Legacy alias retained for existing integrations; new studio writes use the admin route.
+app.post('/api/templates', requireUser, requireAccount, requireAdmin,
+  createTemplateHandler('published', ['draft', 'published', 'archived']));
 
 app.put('/api/admin/templates/:id', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
   const body = req.body ?? {};
@@ -421,7 +401,7 @@ app.put('/api/admin/templates/:id', requireUser, requireAccount, requireAdmin, g
       description: body.description,
       status: body.status,
       deck,
-    });
+    }, req.user.id);
     if (!template) return fail(res, 'not_found', 'Template not found.');
     res.json({ ok: true, template });
   } catch (error) {
@@ -437,80 +417,34 @@ app.get('/api/styles', requireUser, guard(async (req, res) => {
   res.json({ ok: true, isAdmin, styles });
 }));
 
-app.post('/api/styles', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
-  const row = await styleStore.create(req.user.id, req.body ?? {});
-  res.json({ ok: true, style: row });
-}));
+const createStyleHandler = () => guard(async (req, res) => {
+  const body = req.body ?? {};
+  const validation = styleStore.validateStyleInput(body);
+  if (!validation.valid) return fail(res, 'bad_input', validation.errors.join(' '));
+  try {
+    const style = await styleStore.create(req.user.id, body);
+    res.json({ ok: true, style });
+  } catch (error) {
+    if (error.code === '23505') return fail(res, 'bad_input', 'That style slug is already in use.');
+    throw error;
+  }
+});
+
+app.post('/api/styles', requireUser, requireAccount, requireAdmin, createStyleHandler());
 
 app.get('/api/admin/styles', requireUser, requireAccount, requireAdmin, guard(async (_req, res) => {
   res.json({ ok: true, styles: await styleStore.listAdmin() });
 }));
 
-app.post('/api/admin/styles', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
-  const body = req.body ?? {};
-  const name = String(body.name ?? '').trim();
-  const slug = String(body.slug ?? name).trim();
-  if (!name || name.length > 60 || !slug || slug.length > 80 || !/[a-z0-9]/i.test(slug)) {
-    return fail(res, 'bad_input', 'Enter a style name and a valid slug.');
-  }
-  if (body.status !== undefined && !['draft', 'published', 'archived'].includes(body.status)) {
-    return fail(res, 'bad_input', 'Choose draft, published, or archived status.');
-  }
-  const settings = body.settings ?? {};
-  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
-    return fail(res, 'bad_input', 'Style settings must be an object.');
-  }
-  if (settings.layout !== undefined && !['stack', 'centered', 'left-rail'].includes(settings.layout)) {
-    return fail(res, 'bad_input', 'Choose a supported layout.');
-  }
-  if (settings.base_style_id !== undefined
-    && !['signature-african', 'editorial-clean', 'mono-terminal'].includes(settings.base_style_id)) {
-    return fail(res, 'bad_input', 'Choose a built-in base style.');
-  }
-  for (const field of ['accent_hex', 'background_hex', 'surface_hex', 'foreground_hex']) {
-    if (settings[field] !== undefined && !/^#[0-9a-fA-F]{6}$/.test(settings[field])) {
-      return fail(res, 'bad_input', `Enter a valid ${field.replace('_hex', '')} colour.`);
-    }
-  }
-  let style;
-  try {
-    style = await styleStore.create(req.user.id, body);
-  } catch (error) {
-    if (error.code === '23505') return fail(res, 'bad_input', 'That style slug is already in use.');
-    throw error;
-  }
-  res.json({ ok: true, style });
-}));
+app.post('/api/admin/styles', requireUser, requireAccount, requireAdmin, createStyleHandler());
 
 app.put('/api/admin/styles/:id', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
   const body = req.body ?? {};
-  const name = String(body.name ?? '').trim();
-  const slug = String(body.slug ?? name).trim();
-  if (!name || name.length > 60 || !slug || slug.length > 80 || !/[a-z0-9]/i.test(slug)) {
-    return fail(res, 'bad_input', 'Enter a style name and a valid slug.');
-  }
-  if (!['draft', 'published', 'archived'].includes(body.status)) {
-    return fail(res, 'bad_input', 'Choose draft, published, or archived status.');
-  }
-  const settings = body.settings ?? {};
-  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
-    return fail(res, 'bad_input', 'Style settings must be an object.');
-  }
-  if (settings.layout !== undefined && !['stack', 'centered', 'left-rail'].includes(settings.layout)) {
-    return fail(res, 'bad_input', 'Choose a supported layout.');
-  }
-  if (settings.base_style_id !== undefined
-    && !['signature-african', 'editorial-clean', 'mono-terminal'].includes(settings.base_style_id)) {
-    return fail(res, 'bad_input', 'Choose a built-in base style.');
-  }
-  for (const field of ['accent_hex', 'background_hex', 'surface_hex', 'foreground_hex']) {
-    if (settings[field] !== undefined && !/^#[0-9a-fA-F]{6}$/.test(settings[field])) {
-      return fail(res, 'bad_input', `Enter a valid ${field.replace('_hex', '')} colour.`);
-    }
-  }
+  const validation = styleStore.validateStyleInput(body, { requireStatus: true });
+  if (!validation.valid) return fail(res, 'bad_input', validation.errors.join(' '));
   let style;
   try {
-    style = await styleStore.update(req.params.id, body);
+    style = await styleStore.update(req.params.id, body, req.user.id);
   } catch (error) {
     if (error.code === '23505') return fail(res, 'bad_input', 'That style slug is already in use.');
     throw error;
@@ -793,6 +727,35 @@ app.put('/api/brands/:id', requireUser, requireAccount, guard(async (req, res) =
   res.json({ ok: true, brand: row });
 }));
 
+// -------------------------------------------------------------------- feedback
+
+app.post('/api/feedback', requireUser, requireAccount, guard(async (req, res) => {
+  const submission = feedback.validateSubmission(req.body ?? {});
+  if (!submission.valid) return fail(res, 'bad_input', submission.errors.join(' '));
+  if (submission.value.deck_id
+    && !(await decks.get(req.user.id, submission.value.deck_id))) {
+    return fail(res, 'bad_input', 'The selected deck is not available to this account.');
+  }
+  const row = await feedback.create(req.user, submission.value);
+  res.json({ ok: true, feedback: { id: row.id, created_at: row.created_at } });
+}));
+
+app.get('/api/admin/feedback', requireUser, requireAccount, requireAdmin, guard(async (_req, res) => {
+  res.json({ ok: true, feedback: await feedback.listAdmin() });
+}));
+
+app.patch('/api/admin/feedback/:id', requireUser, requireAccount, requireAdmin, guard(async (req, res) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(req.params.id)) {
+    return fail(res, 'bad_input', 'Feedback ID must be a valid ID.');
+  }
+  if (!feedback.FEEDBACK_STATUSES.includes(req.body?.status)) {
+    return fail(res, 'bad_input', 'Choose a valid feedback status.');
+  }
+  const row = await feedback.updateStatus(req.params.id, req.body.status);
+  if (!row) return fail(res, 'not_found', 'Feedback submission not found.');
+  res.json({ ok: true, feedback: row });
+}));
+
 app.delete('/api/brands/:id', requireUser, requireAccount, guard(async (req, res) => {
   const gone = await brands.remove(req.user.id, req.params.id);
   if (!gone) return fail(res, 'not_found', 'Brand not found.');
@@ -962,7 +925,7 @@ app.get('/', (_req, res) => res.sendFile(join(ROOT, 'public', 'landing.html')));
 app.get(/^\/studio\/?$/, (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
 app.get('/studio/new', (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
 app.get(/^\/studio\/deck\/[^/]+\/?$/, (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
-app.get(/^\/studio\/admin\/(templates|styles)\/?$/, (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
+app.get(/^\/studio\/admin\/(templates|styles|feedback)\/?$/, (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
 app.get('/signin', (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
 app.use('/templates', express.static(join(ROOT, 'templates')));
 app.use('/out', express.static(join(ROOT, 'out')));

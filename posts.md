@@ -739,6 +739,32 @@ Status: draft
 
 ---
 
+## 2026-10-04 — One schema for style settings
+Status: draft
+
+> Style controls copied the carousel schema.
+>
+> Now /api/meta supplies fields and limits to the editor; server validation uses the same source. Published templates are validated before entering the gallery.
+>
+> Also fixed a browser test that failed before it ran.
+
+**Images:** the Styles workbench with a schema-derived editor.
+
+---
+
+## 2026-10-04 — Styles travel, templates stay put
+Status: draft
+
+> Style changes the look, not the template.
+>
+> Layout stays with templates; styles carry color, heading/content fonts, and type sizes. Publishing an edit creates a new template version instead of rewriting the old one.
+>
+> Preview and export still share one renderer.
+
+**Images:** one template preview before and after switching styles, with the layout unchanged.
+
+---
+
 ## 2026-10-05 — A logo that survives the export
 Status: draft
 
@@ -749,5 +775,27 @@ Status: draft
 > Uploads are limited to your own storage folder; logos are public so saved decks and exports can render them later. Large images are resized to 512 pixels and converted to WebP when it saves bytes, which cuts the amount the browser has to upload and download.
 
 **Images:** the uploaded logo in the editor preview and an exported slide.
+
+---
+
+## 2026-10-04 — Feedback, not a support maze
+Status: draft
+
+> Users can now send a suggestion, bug report, or question from the dashboard. Feedback lands in a private admin inbox with filters and status tracking.
+>
+> The server gates staff access, and database policies keep submissions private. No attachments or email pings yet.
+
+**Images:** the dashboard feedback dialog and admin inbox.
+
+---
+
+## 2026-10-05 — More styles, same row
+Status: draft
+
+> Adding a reusable style pushed it onto a new row even though there was room beside the built-ins.
+>
+> The picker had a fixed three-column layout and a narrow width cap. It now fills available columns and wraps only when the cards would get too small.
+
+**Images:** the style picker with four cards on desktop and two columns on mobile.
 
 ---

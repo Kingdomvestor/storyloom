@@ -27,6 +27,7 @@ test('known studio routes serve the app shell and unknown paths return 404', asy
     '/studio/deck/shared-deck-id',
     '/studio/admin/templates',
     '/studio/admin/styles',
+    '/studio/admin/feedback',
   ]) {
     const response = await fetch(`${base}${path}`);
     assert.equal(response.status, 200, path);

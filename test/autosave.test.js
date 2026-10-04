@@ -29,24 +29,6 @@ after(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
-  await page.$eval('#panelTabs button[data-tab="style"]', (button) => button.click());
-  await page.waitForFunction(() => {
-    const frame = document.querySelector('#preview');
-    return frame.contentDocument.documentElement.dataset.style === 'editorial-clean'
-      && frame.contentDocument.documentElement.dataset.ready === 'true';
-  });
-  const previewColors = await page.evaluate(() => {
-    const frame = document.querySelector('#preview');
-    const slide = frame.contentDocument.querySelector('#slide');
-    return ['--bg', '--fg', '--accent'].map((property) =>
-      frame.contentWindow.getComputedStyle(slide).getPropertyValue(property).trim().toLowerCase());
-  });
-  const paletteColors = await page.$$eval(
-    '#theme-background_hex, #theme-foreground_hex, #theme-accent_hex',
-    (inputs) => inputs.map((input) => input.value.toLowerCase()),
-  );
-  assert.deepEqual(paletteColors, previewColors);
-  await page.$eval('#panelTabs button[data-tab="content"]', (button) => button.click());
 test('autosave persists edits made while the first save is in flight', async () => {
   const writes = [];
   const savedDecks = [];
@@ -115,6 +97,28 @@ test('autosave persists edits made while the first save is in flight', async () 
       }
       if (url.pathname === '/api/brands') {
         await respondJson({ ok: true, brands: [] });
+        return;
+      }
+      if (url.pathname === '/api/styles') {
+        await respondJson({
+          ok: true,
+          isAdmin: false,
+          styles: [{
+            id: 'universal-style',
+            slug: 'universal-style',
+            name: 'Universal style',
+            status: 'published',
+            is_system: false,
+            settings: {
+              base_style_id: 'editorial-clean',
+              heading_font_pair: '"Playfair Display", Georgia, serif',
+              body_font_pair: 'Lato, system-ui, sans-serif',
+              heading_font_size: 108,
+              body_font_size: 36,
+              layout: 'left-rail',
+            },
+          }],
+        });
         return;
       }
       if (url.pathname === '/api/generate' && request.method() === 'POST') {
@@ -291,6 +295,19 @@ test('autosave persists edits made while the first save is in flight', async () 
 
   await page.$eval('#panelTabs button[data-tab="style"]', (button) => button.click());
   await page.waitForSelector('#theme-background_hex');
+  await page.waitForFunction(() => document.querySelector('#preview')
+    ?.contentDocument?.documentElement.dataset.ready === 'true');
+  const initialPreviewColors = await page.evaluate(() => {
+    const frame = document.querySelector('#preview');
+    const slide = frame.contentDocument.querySelector('#slide');
+    return ['--bg', '--fg', '--accent'].map((property) =>
+      frame.contentWindow.getComputedStyle(slide).getPropertyValue(property).trim().toLowerCase());
+  });
+  const initialPaletteColors = await page.$$eval(
+    '#theme-background_hex, #theme-foreground_hex, #theme-accent_hex',
+    (inputs) => inputs.map((input) => input.value.toLowerCase()),
+  );
+  assert.deepEqual(initialPaletteColors, initialPreviewColors);
   const fontOptionLengths = await page.$$eval('#theme-font option', (options) =>
     options.map((option) => option.value.length));
   assert.ok(fontOptionLengths.every((length) => length <= 40));
@@ -308,4 +325,45 @@ test('autosave persists edits made while the first save is in flight', async () 
   await page.waitForFunction(() => document.querySelector('#autostate')?.classList.contains('saved'));
   assert.equal(savedDecks[3].theme.background_hex, '#123456');
   assert.equal(savedDecks[3].theme.font_pair, 'Poppins, system-ui, sans-serif');
+
+  await page.select('#tabStyle select[aria-label="Template layout"]', 'centered');
+  await page.waitForFunction(() =>
+    document.querySelector('#preview')?.contentDocument?.documentElement.dataset.layout === 'centered');
+  await page.select('#tabStyle select[aria-label="Heading font"]', '"Playfair Display", Georgia, serif');
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('#preview');
+    return frame.contentWindow.getComputedStyle(frame.contentDocument.querySelector('.heading'))
+      .fontFamily.includes('Playfair Display');
+  });
+  await page.select('#tabStyle select[aria-label="Content font"]', 'Lato, system-ui, sans-serif');
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('#preview');
+    return frame.contentWindow.getComputedStyle(frame.contentDocument.querySelector('#slide'))
+      .getPropertyValue('--body-font').includes('Lato');
+  });
+  const headingSize = await page.$eval('#tabStyle input[aria-label="Heading max size"]', (input) => {
+    input.value = '104';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return input.value;
+  });
+  assert.equal(headingSize, '104');
+  await page.waitForFunction(() => {
+    const frame = document.querySelector('#preview');
+    return getComputedStyle(frame.contentDocument.querySelector('#slide'))
+      .getPropertyValue('--heading-size').trim() === '104px';
+  });
+  await page.$eval('#tabStyle [data-s="universal-style"]', (swatch) => swatch.closest('button').click());
+  await page.waitForFunction(() => {
+    const root = document.querySelector('#preview').contentDocument.documentElement;
+    return root.dataset.style === 'editorial-clean' && root.dataset.layout === 'centered';
+  });
+  await page.waitForFunction(() => document.querySelector('#autostate')?.classList.contains('pending'));
+  await page.waitForFunction(() => document.querySelector('#autostate')?.classList.contains('saved'));
+  assert.equal(savedDecks.at(-1).layout, 'centered');
+  assert.equal(savedDecks.at(-1).theme.layout, undefined);
+  assert.equal(savedDecks.at(-1).slides[0].heading, 'Slide 1');
+  assert.equal(savedDecks.at(-1).theme.heading_font_pair, '"Playfair Display", Georgia, serif');
+  assert.equal(savedDecks.at(-1).theme.body_font_pair, 'Lato, system-ui, sans-serif');
+  assert.equal(savedDecks.at(-1).theme.heading_font_size, 108);
 });

@@ -139,6 +139,22 @@ test('admin catalogs filter correctly and custom styles can be archived', async 
       button.textContent), 'All');
     const styleRequestsBeforeFilter = adminStyleListRequests;
     await page.$eval('#adminStylePreview', (frame) => { frame.dataset.instanceToken = 'preserved'; });
+    await page.click('.style-library-item[data-style-id="style-public"]');
+    await page.$eval('#adminStyleForm [name="name"]', (input) => {
+      input.value = 'Uncommitted style name';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const discardPrompt = new Promise((resolve) => {
+      page.once('dialog', async (dialog) => {
+        const message = dialog.message();
+        await dialog.dismiss();
+        resolve(message);
+      });
+    });
+    await page.click('.style-library-item[data-style-id="style-draft"]');
+    assert.match(await discardPrompt, /Discard your unsaved style changes/);
+    assert.equal(await page.$eval('#adminStyleForm [name="name"]', (input) => input.value),
+      'Uncommitted style name');
     await page.evaluate(() => {
       const button = [...document.querySelectorAll('.admin-filters button')]
         .find((item) => item.textContent === 'Drafts');
@@ -158,6 +174,37 @@ test('admin catalogs filter correctly and custom styles can be archived', async 
     });
     await page.waitForFunction(() => [...document.querySelectorAll('.admin-style-row strong')]
       .some((node) => node.textContent === 'Custom Public'));
+    const acceptDiscardPrompt = new Promise((resolve) => {
+      page.once('dialog', async (dialog) => {
+        await dialog.accept();
+        resolve();
+      });
+    });
+    await page.click('.style-library-item[data-style-id="style-public"]');
+    await acceptDiscardPrompt;
+    const styleContract = (await (await fetch(`${base}/api/meta`)).json()).styleSettings;
+    const styleControls = await page.$eval('#adminStyleForm', (form) =>
+      Object.fromEntries([...form.querySelectorAll('[name]')].map((control) => [
+        control.name,
+        {
+          type: control.type,
+          maxLength: control.maxLength,
+          min: control.min,
+          max: control.max,
+          options: [...(control.options ?? [])].map((option) => option.value),
+        },
+      ])));
+    for (const [field, definition] of Object.entries(styleContract.fields)) {
+      assert.ok(styleControls[field], `style editor exposes ${field}`);
+      if (definition.maxLength) assert.equal(styleControls[field].maxLength, definition.maxLength);
+      if (definition.enum) assert.deepEqual(styleControls[field].options, definition.enum);
+      if (styleContract.colorFields.includes(field)) assert.equal(styleControls[field].type, 'color');
+      if (definition.type === 'integer') {
+        assert.equal(styleControls[field].type, 'number');
+        assert.equal(Number(styleControls[field].min), definition.minimum);
+        assert.equal(Number(styleControls[field].max), definition.maximum);
+      }
+    }
     await page.evaluate(() => {
       const row = [...document.querySelectorAll('.admin-style-row')]
         .find((item) => item.querySelector('strong')?.textContent === 'Custom Public');

@@ -1,7 +1,40 @@
 import { admin } from './supabase.js';
 import { isAdmin } from './styles.js';
+import { validateDeck } from './validate.js';
 
-const FIELDS = 'id, name, slug, description, status, deck, draft, created_by, created_at, updated_at';
+const FIELDS = 'id, family_id, version, is_current, published_at, name, slug, description, status, deck, draft, created_by, created_at, updated_at';
+
+export function templateUpdateChanges(current, row, updatedAt) {
+  const changes = { ...row, updated_at: updatedAt };
+  if ((current.status === 'draft' || current.status === 'archived')
+    && row.status === 'published' && !current.published_at) {
+    return { ...changes, published_at: updatedAt, draft: null };
+  }
+  if (current.status === 'published' && row.status === 'draft') {
+    return { draft: row, updated_at: updatedAt };
+  }
+  if (current.status === 'published' && row.status === 'archived') {
+    return { status: 'archived', draft: null, updated_at: updatedAt };
+  }
+  if (current.status === 'archived') {
+    return { draft: row, updated_at: updatedAt };
+  }
+  if (row.status === 'published' || row.status === 'archived') changes.draft = null;
+  return changes;
+}
+
+export function startsNewTemplateVersion(current, row) {
+  return current.is_current
+    && row.status === 'published'
+    && (current.status === 'published'
+      || (current.status === 'archived' && Boolean(current.published_at)));
+}
+
+export function publishedTemplateDeck(row) {
+  if (!row?.deck || typeof row.deck !== 'object' || Array.isArray(row.deck)) return null;
+  const deck = { ...row.deck, title: row.name, source: 'template' };
+  return validateDeck(deck).valid ? deck : null;
+}
 
 export function normalise(input = {}) {
   const name = String(input.name ?? '').trim().slice(0, 60);
@@ -28,6 +61,7 @@ export async function listPublished() {
   const { data, error } = await client.from('starter_templates')
     .select(FIELDS)
     .eq('status', 'published')
+    .eq('is_current', true)
     .order('created_at', { ascending: false });
 
   if (error && error.code !== '42P01' && error.code !== 'PGRST205') {
@@ -41,6 +75,7 @@ export async function listAdmin() {
   if (!client) throw new Error('Templates are not configured on this server.');
   const { data, error } = await client.from('starter_templates')
     .select(FIELDS)
+    .eq('is_current', true)
     .order('updated_at', { ascending: false });
 
   if (error) throw new Error(`starterTemplates.listAdmin: ${error.message}`);
@@ -62,6 +97,7 @@ export async function create(userId, input = {}) {
       created_by: userId,
       ...row,
       status: row.status,
+      published_at: row.status === 'published' ? new Date().toISOString() : null,
     })
     .select(FIELDS)
     .single();
@@ -74,27 +110,43 @@ export async function create(userId, input = {}) {
   return data;
 }
 
-export async function update(id, input = {}) {
+export async function update(id, input = {}, userId) {
   const client = admin();
   if (!client) throw new Error('Templates are not configured on this server.');
+  if (!userId || !(await isAdmin(userId))) throw new Error('Only admins can update templates.');
   const row = normalise(input);
   if (!row.name || !row.slug || !row.deck || typeof row.deck !== 'object' || Array.isArray(row.deck)) {
     throw new Error('A template needs a name, slug, and valid deck.');
   }
 
   const { data: current, error: lookupError } = await client.from('starter_templates')
-    .select('status')
+    .select('status, family_id, version, is_current, published_at')
     .eq('id', id)
     .maybeSingle();
   if (lookupError) throw new Error(`starterTemplates.update lookup: ${lookupError.message}`);
   if (!current) return null;
-
-  let changes = { ...row, updated_at: new Date().toISOString() };
-  if (current.status === 'published' && row.status === 'draft') {
-    changes = { draft: row, updated_at: changes.updated_at };
-  } else if (row.status === 'published' || row.status === 'archived') {
-    changes.draft = null;
+  if (!current.is_current) {
+    throw new Error('Published template versions are immutable.');
   }
+
+  if (startsNewTemplateVersion(current, row)) {
+    const { data, error } = await client.rpc('publish_starter_template_version', {
+      p_id: id,
+      p_name: row.name,
+      p_slug: row.slug,
+      p_description: row.description,
+      p_deck: row.deck,
+      p_created_by: userId,
+    });
+    if (error) {
+      const failure = new Error(`starterTemplates.publishVersion: ${error.message}`);
+      failure.code = error.code;
+      throw failure;
+    }
+    return data;
+  }
+
+  const changes = templateUpdateChanges(current, row, new Date().toISOString());
 
   const { data, error } = await client.from('starter_templates')
     .update(changes)

@@ -161,6 +161,7 @@ export function defaultDeck(styleId, opts = {}) {
       : schema.properties.platform.enum[0],
     aspect_ratio: '4:5',
     style_id: style,
+    layout: 'stack',
     narrative_type: base.narrative_type,
     source: 'template',
     title: base.title,

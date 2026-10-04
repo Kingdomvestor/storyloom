@@ -45,6 +45,7 @@ test('sign-in return paths are limited to safe same-origin studio routes', () =>
   assert.equal(helpers.safeReturnPath('/studio/new?step=template'), '/studio/new?step=template');
   assert.equal(helpers.safeReturnPath('//attacker.example/path'), null);
   assert.equal(helpers.safeReturnPath('https://attacker.example/path'), null);
+  assert.equal(helpers.safeReturnPath('/studio/admin/feedback'), '/studio/admin/feedback');
   assert.equal(helpers.safeReturnPath('/studio/admin/unrecognized'), null);
   assert.equal(helpers.signInNextPath(), '/studio/new?step=template');
   assert.equal(
@@ -152,6 +153,9 @@ test('signed-out deep links return to the requested saved deck after sign-in', a
     assert.equal(new URL(page.url()).search, '?step=template');
 
     await page.goto(`${base}/studio/admin/templates`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'not-found');
+    assert.match(await page.$eval('#viewNotFound h1', (node) => node.textContent), /isn’t available/);
+    await page.goto(`${base}/studio/admin/feedback`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.documentElement.dataset.view === 'not-found');
     assert.match(await page.$eval('#viewNotFound h1', (node) => node.textContent), /isn’t available/);
     assert.deepEqual(pageErrors, []);

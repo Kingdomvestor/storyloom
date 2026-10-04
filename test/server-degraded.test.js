@@ -33,6 +33,20 @@ test('/api/meta is public and reports supabase:null when unconfigured', async ()
   assert.equal(body.ok, true);
   assert.equal(body.supabase, null);
   assert.equal(typeof body.hasApiKey, 'boolean');
+  assert.deepEqual(body.styleSettings.baseStyleIds, [
+    'signature-african', 'editorial-clean', 'mono-terminal',
+  ]);
+  assert.deepEqual(body.layouts, ['stack', 'centered', 'left-rail']);
+  assert.deepEqual(body.styleSettings.colorFields, [
+    'accent_hex', 'background_hex', 'surface_hex', 'foreground_hex',
+  ]);
+  assert.equal(body.styleSettings.fields.palette.maxLength, 40);
+  assert.equal(body.styleSettings.fields.background_hex.pattern, '^#[0-9a-fA-F]{6}$');
+  assert.equal(body.styleSettings.fields.heading_font_pair.maxLength, 120);
+  assert.equal(body.styleSettings.fields.heading_font_size.minimum, 34);
+  assert.equal(body.styleSettings.fields.body_font_size.maximum, 48);
+  assert.equal(body.styleSettings.fields.layout, undefined);
+  assert.equal(body.styleSettings.limits.fontPair, 120);
 });
 
 test('/api/health is public', async () => {
@@ -77,8 +91,12 @@ test('account routes are hard-gated → 401 without a user', async () => {
     '/api/decks/abc',
     '/api/admin/templates',
     '/api/admin/styles',
+    '/api/admin/feedback',
+    '/api/feedback',
   ]) {
-    const { status, body } = await call(p);
+    const { status, body } = await call(p, p === '/api/feedback'
+      ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }
+      : {});
     assert.equal(status, 401, `${p} should be 401`);
     assert.equal(body.kind, 'unauthorized');
   }
@@ -94,4 +112,12 @@ test('account routes are hard-gated → 401 without a user', async () => {
   });
   assert.equal(style.status, 401);
   assert.equal(style.body.kind, 'unauthorized');
+
+  const feedbackUpdate = await call('/api/admin/feedback/00000000-0000-4000-8000-000000000000', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ status: 'resolved' }),
+  });
+  assert.equal(feedbackUpdate.status, 401);
+  assert.equal(feedbackUpdate.body.kind, 'unauthorized');
 });

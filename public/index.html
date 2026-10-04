@@ -134,7 +134,47 @@
   </div>
   <p class="dashempty" id="dashEmpty" role="status" aria-live="polite" hidden></p>
   <section class="deckgrid" id="deckGrid" aria-label="Saved carousels"></section>
+  <button class="feedback-fab" id="feedbackOpenBtn" type="button">
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6.5A7.5 7.5 0 1 1 20 11.5Z"
+        stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M8 11.5h8M8 14.5h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+    <span>Send feedback</span>
+  </button>
 </main>
+
+<dialog class="feedback-dialog" id="feedbackDialog" aria-labelledby="feedbackTitle">
+  <form id="feedbackForm">
+    <header class="feedback-dialog-head">
+      <div>
+        <p class="dash-eyebrow">Help us improve Storyloom</p>
+        <h2 id="feedbackTitle">Send feedback</h2>
+      </div>
+      <button class="linkbtn" id="feedbackCloseBtn" type="button" aria-label="Close feedback form">Close</button>
+    </header>
+    <label for="feedbackCategory">What is this about?</label>
+    <select id="feedbackCategory" name="category" required>
+      <option value="suggestion">Suggestion</option>
+      <option value="bug">Bug report</option>
+      <option value="question">Question</option>
+      <option value="other">Other</option>
+    </select>
+    <label for="feedbackMessage">Your message</label>
+    <textarea id="feedbackMessage" name="message" rows="6" maxlength="4000" required
+      placeholder="Tell us what happened or what you would like to see."></textarea>
+    <div class="feedback-form-meta">
+      <span id="feedbackContext">We’ll include this page to help us understand your feedback.</span>
+      <span id="feedbackCounter" aria-live="polite">0 / 4000</span>
+    </div>
+    <p class="feedback-privacy">Please don’t include passwords, payment details, or other sensitive information.</p>
+    <p class="feedback-result" id="feedbackResult" role="status" aria-live="polite" hidden></p>
+    <footer class="feedback-dialog-actions">
+      <button class="btn-ghost sm" id="feedbackCancelBtn" type="button">Cancel</button>
+      <button class="btn-go sm" id="feedbackSubmitBtn" type="submit">Send feedback</button>
+    </footer>
+  </form>
+</dialog>
 
 <!-- =============================================================== ADMIN -->
 <main class="view view-admin" id="viewAdmin">
@@ -150,6 +190,7 @@
     <nav class="admin-nav" aria-label="Admin libraries">
       <button type="button" data-admin-page="templates" aria-current="page">Templates</button>
       <button type="button" data-admin-page="styles">Styles</button>
+      <button type="button" data-admin-page="feedback">Feedback</button>
       <button class="admin-back" id="adminBackBtn" type="button">Back to studio</button>
     </nav>
     <p class="admin-message" id="adminMessage" role="status" aria-live="polite" hidden></p>
@@ -236,7 +277,7 @@
     </div>
 
     <div class="knob knob-style">
-      <label>Style <span class="hint">— swappable any time, it's only CSS</span></label>
+      <label>Style <span class="hint">— reusable on any template; switch it any time</span></label>
       <div class="styles" id="stylePicker"></div>
     </div>
 

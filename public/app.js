@@ -73,6 +73,12 @@ const state = {
     styles: [],
     selectedStyle: null,
     sampleDeck: null,
+    feedbackRows: [],
+    feedbackStatus: 'all',
+    feedbackCategory: 'all',
+    feedbackQuery: '',
+    styleDirty: false,
+    styleSaving: false,
   },
 };
 
@@ -138,7 +144,7 @@ function safeReturnPath(value) {
     return step === 'compose' || step === 'template' ? `${url.pathname}?step=${step}` : '/studio/new';
   }
   if (/^\/studio\/deck\/[^/]+$/.test(url.pathname)) return url.pathname;
-  if (/^\/studio\/admin\/(templates|styles)\/?$/.test(url.pathname)) {
+  if (/^\/studio\/admin\/(templates|styles|feedback)\/?$/.test(url.pathname)) {
     return url.pathname.replace(/\/$/, '');
   }
   return null;
@@ -755,9 +761,9 @@ async function restoreEditorFromLocation() {
 }
 
 async function restoreAdminFromLocation() {
-  const route = /^\/studio\/admin\/(templates|styles)\/?$/.exec(location.pathname);
+  const route = /^\/studio\/admin\/(templates|styles|feedback)\/?$/.exec(location.pathname);
   const legacyPage = new URLSearchParams(location.search).get('admin');
-  const page = route?.[1] ?? (['templates', 'styles'].includes(legacyPage) ? legacyPage : null);
+  const page = route?.[1] ?? (['templates', 'styles', 'feedback'].includes(legacyPage) ? legacyPage : null);
   if (!page) {
     if (location.pathname.startsWith('/studio/admin/')) clearEditorLocation({ replace: true });
     return false;
@@ -809,6 +815,68 @@ function wireDashboard() {
     setNewFlowLocation('choice');
     document.documentElement.dataset.view = 'compose';
     showNewDeckChoice();
+  };
+  wireFeedbackForm();
+}
+
+function setFeedbackResult(text, error = false) {
+  const result = $('#feedbackResult');
+  result.textContent = text;
+  result.hidden = !text;
+  result.classList.toggle('error', error);
+}
+
+function wireFeedbackForm() {
+  const dialog = $('#feedbackDialog');
+  const form = $('#feedbackForm');
+  const message = $('#feedbackMessage');
+  const counter = $('#feedbackCounter');
+  const submit = $('#feedbackSubmitBtn');
+  const close = $('#feedbackCloseBtn');
+  const cancel = $('#feedbackCancelBtn');
+  const updateCounter = () => { counter.textContent = `${message.value.length} / 4000`; };
+
+  dialog.addEventListener('cancel', (event) => {
+    if (submit.disabled) event.preventDefault();
+  });
+  $('#feedbackOpenBtn').onclick = () => {
+    form.reset();
+    updateCounter();
+    setFeedbackResult('');
+    dialog.showModal();
+    $('#feedbackCategory').focus();
+  };
+  close.onclick = () => dialog.close();
+  cancel.onclick = () => dialog.close();
+  message.addEventListener('input', updateCounter);
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    close.disabled = true;
+    cancel.disabled = true;
+    setFeedbackResult('Sending your feedback…');
+    const body = {
+      category: $('#feedbackCategory').value,
+      message: message.value,
+      context_page: location.pathname.slice(0, 200),
+      deck_id: state.deckId ?? null,
+    };
+    try {
+      const result = await api('/api/feedback', body);
+      if (!result.ok) {
+        setFeedbackResult(`Could not send feedback: ${result.message}`, true);
+        return;
+      }
+      setFeedbackResult('Thank you — your feedback was sent.');
+      form.reset();
+      updateCounter();
+    } catch (error) {
+      setFeedbackResult(`Could not send feedback: ${error.message}`, true);
+    } finally {
+      submit.disabled = false;
+      close.disabled = false;
+      cancel.disabled = false;
+    }
   };
 }
 
@@ -896,7 +964,7 @@ function scheduleAutosaveRetry(message) {
 }
 
 window.addEventListener('beforeunload', (event) => {
-  if (!state.dirty || !state.user) return;
+  if ((!state.dirty && !state.admin.styleDirty && !state.admin.styleSaving) || !state.user) return;
   event.preventDefault();
   event.returnValue = '';
 });
@@ -1189,6 +1257,17 @@ function showAdminMessage(text, error = false) {
   message.classList.toggle('error', error);
 }
 
+function confirmAdminStyleDiscard() {
+  if (state.admin.styleSaving) {
+    showAdminMessage('Wait for the style save to finish before leaving this editor.', true);
+    return false;
+  }
+  if (!state.admin.styleDirty) return true;
+  if (!window.confirm('Discard your unsaved style changes?')) return false;
+  state.admin.styleDirty = false;
+  return true;
+}
+
 function wireAdmin() {
   $('#adminLink').onclick = async () => {
     if (state.deck && state.dirty && state.user) {
@@ -1214,9 +1293,16 @@ function wireAdmin() {
     else if (state.admin.page === 'templates') {
       $('#newDeckBtn').click();
     }
-    else selectAdminStyle(null);
+    else if (state.admin.page === 'styles') selectAdminStyle(null);
   };
   window.addEventListener('popstate', async () => {
+    if (document.documentElement.dataset.view === 'admin' && !confirmAdminStyleDiscard()) {
+      const url = new URL(location.href);
+      url.pathname = `/studio/admin/${state.admin.page}`;
+      url.search = '';
+      window.history.pushState(null, '', url);
+      return;
+    }
     if (await restoreEditorFromLocation()) return;
     if (await restoreAdminFromLocation()) return;
     if (await restoreNewFlowFromLocation()) return;
@@ -1237,10 +1323,13 @@ function wireAdmin() {
 }
 
 async function openAdminPage(page, { navigate = true } = {}) {
-  if (!state.isAdmin || !['templates', 'styles'].includes(page)) {
+  if (!state.isAdmin || !['templates', 'styles', 'feedback'].includes(page)) {
     showAdminMessage('Admin access is required to manage these libraries.', true);
     return false;
   }
+  if (document.documentElement.dataset.view === 'admin'
+    && page !== state.admin.page
+    && !confirmAdminStyleDiscard()) return false;
   if (document.documentElement.dataset.view !== 'admin') {
     const view = document.documentElement.dataset.view;
     state.adminReturn = {
@@ -1262,17 +1351,24 @@ async function openAdminPage(page, { navigate = true } = {}) {
     if (button.dataset.adminPage === page) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
-  $('#adminTitle').textContent = page === 'templates' ? 'Templates' : 'Styles';
+  $('#adminTitle').textContent = page === 'feedback' ? 'Feedback' : page === 'templates' ? 'Templates' : 'Styles';
   $('#adminDescription').textContent = page === 'templates'
     ? 'Manage the decks people can start from.'
-    : 'Shape the typography, layout, and palette applied to a deck.';
-  $('#adminCreateBtn').textContent = page === 'templates'
+    : page === 'styles'
+      ? 'Manage reusable typography and color presets. Layout stays with each template.'
+      : 'Review the latest 200 suggestions, bug reports, questions, and other feedback from users.';
+  const createButton = $('#adminCreateBtn');
+  createButton.hidden = page === 'feedback';
+  createButton.textContent = page === 'templates'
     ? (state.deck ? 'Save current deck' : 'New from studio')
     : 'New style';
-  return page === 'templates' ? renderAdminTemplates() : renderAdminStyles();
+  if (page === 'templates') return renderAdminTemplates();
+  if (page === 'styles') return renderAdminStyles();
+  return renderAdminFeedback();
 }
 
 async function restorePreviousView(destination, fallback) {
+  if (document.documentElement.dataset.view === 'admin' && !confirmAdminStyleDiscard()) return false;
   state.admin.renderId += 1;
   state.admin.previewObserver?.disconnect();
   state.admin.previewObserver = null;
@@ -1302,7 +1398,7 @@ async function restorePreviousView(destination, fallback) {
   }
 
   if (target.view === 'admin' && state.isAdmin) {
-    const page = ['templates', 'styles'].includes(target.page) ? target.page : 'templates';
+    const page = ['templates', 'styles', 'feedback'].includes(target.page) ? target.page : 'templates';
     const url = new URL(location.href);
     url.pathname = `/studio/admin/${page}`;
     url.search = '';
@@ -1335,6 +1431,172 @@ function adminAction(label, action, { primary = false } = {}) {
   button.textContent = label;
   button.onclick = action;
   return button;
+}
+
+function feedbackOption(select, value, text) {
+  const option = document.createElement('option');
+  option.value = value;
+  option.textContent = text;
+  select.appendChild(option);
+}
+
+function feedbackStatusName(status) {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+async function renderAdminFeedback() {
+  const renderId = ++state.admin.renderId;
+  const host = $('#adminContent');
+  host.setAttribute('aria-busy', 'true');
+  host.innerHTML = '<p class="admin-empty">Loading feedback…</p>';
+  let response;
+  try {
+    response = await api('/api/admin/feedback');
+  } catch (error) {
+    if (renderId === state.admin.renderId) {
+      host.setAttribute('aria-busy', 'false');
+      host.innerHTML = '';
+      showAdminMessage(`Could not load feedback: ${error.message}`, true);
+    }
+    return;
+  }
+  if (renderId !== state.admin.renderId) return;
+  host.setAttribute('aria-busy', 'false');
+  if (!response.ok) {
+    host.innerHTML = '';
+    showAdminMessage(`Could not load feedback: ${response.message}`, true);
+    return;
+  }
+  state.admin.feedbackRows = response.feedback;
+  state.admin.feedbackStatus = 'all';
+  state.admin.feedbackCategory = 'all';
+  state.admin.feedbackQuery = '';
+  showAdminMessage('');
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'feedback-admin-toolbar';
+  const statusFilter = document.createElement('select');
+  statusFilter.setAttribute('aria-label', 'Filter feedback by status');
+  feedbackOption(statusFilter, 'all', 'All statuses');
+  for (const status of ['new', 'reviewing', 'planned', 'resolved', 'declined']) {
+    feedbackOption(statusFilter, status, feedbackStatusName(status));
+  }
+  const categoryFilter = document.createElement('select');
+  categoryFilter.setAttribute('aria-label', 'Filter feedback by category');
+  feedbackOption(categoryFilter, 'all', 'All categories');
+  for (const category of ['suggestion', 'bug', 'question', 'other']) {
+    feedbackOption(categoryFilter, category, feedbackStatusName(category));
+  }
+  const search = document.createElement('input');
+  search.type = 'search';
+  search.maxLength = 120;
+  search.placeholder = 'Search messages or email';
+  search.setAttribute('aria-label', 'Search feedback messages or email');
+  const list = document.createElement('div');
+  list.className = 'feedback-admin-list';
+  const summary = document.createElement('p');
+  summary.className = 'admin-empty';
+  toolbar.append(statusFilter, categoryFilter, search);
+  host.replaceChildren(toolbar, summary, list);
+
+  const renderRows = () => {
+    const query = state.admin.feedbackQuery.toLocaleLowerCase();
+    const rows = state.admin.feedbackRows.filter((row) =>
+      (state.admin.feedbackStatus === 'all' || row.status === state.admin.feedbackStatus)
+      && (state.admin.feedbackCategory === 'all' || row.category === state.admin.feedbackCategory)
+      && (!query || `${row.message} ${row.user_email ?? ''}`.toLocaleLowerCase().includes(query)));
+    list.replaceChildren();
+    summary.textContent = state.admin.feedbackRows.length
+      ? `Showing ${rows.length} of ${state.admin.feedbackRows.length} loaded submissions (latest 200).`
+      : 'No feedback has been submitted yet.';
+    summary.hidden = false;
+    if (!rows.length && state.admin.feedbackRows.length) {
+      const empty = document.createElement('p');
+      empty.className = 'admin-empty';
+      empty.textContent = 'No submissions match these filters.';
+      list.appendChild(empty);
+      return;
+    }
+
+    for (const row of rows) {
+      const card = document.createElement('article');
+      card.className = 'feedback-admin-card';
+      const head = document.createElement('header');
+      head.className = 'feedback-admin-card-head';
+      const metadata = document.createElement('div');
+      metadata.className = 'feedback-admin-meta';
+      const category = document.createElement('strong');
+      category.textContent = feedbackStatusName(row.category);
+      const email = document.createElement('span');
+      email.textContent = row.user_email || 'Email unavailable';
+      const when = document.createElement('time');
+      const date = new Date(row.created_at);
+      when.textContent = Number.isNaN(date.getTime()) ? 'Date unavailable' : date.toLocaleString();
+      if (!Number.isNaN(date.getTime())) when.dateTime = date.toISOString();
+      metadata.append(category, email, when);
+
+      const status = document.createElement('select');
+      status.setAttribute('aria-label', `Update status for ${row.user_email || 'this submission'}`);
+      for (const value of ['new', 'reviewing', 'planned', 'resolved', 'declined']) {
+        feedbackOption(status, value, feedbackStatusName(value));
+      }
+      status.value = row.status;
+      status.onchange = async () => {
+        const nextStatus = status.value;
+        status.disabled = true;
+        let update;
+        try {
+          update = await api(`/api/admin/feedback/${encodeURIComponent(row.id)}`, {
+            status: nextStatus,
+          }, { method: 'PATCH' });
+        } catch (error) {
+          status.disabled = false;
+          status.value = row.status;
+          showAdminMessage(`Could not update feedback: ${error.message}`, true);
+          return;
+        }
+        status.disabled = false;
+        if (!update.ok) {
+          status.value = row.status;
+          showAdminMessage(`Could not update feedback: ${update.message}`, true);
+          return;
+        }
+        Object.assign(row, update.feedback);
+        showAdminMessage('Feedback status updated.');
+        renderRows();
+      };
+      head.append(metadata, status);
+
+      const message = document.createElement('p');
+      message.className = 'feedback-admin-message';
+      message.textContent = row.message;
+      card.append(head, message);
+      const contextParts = [];
+      if (row.context_page) contextParts.push(`Page: ${row.context_page}`);
+      if (row.deck_id) contextParts.push(`Deck: ${row.deck_id}`);
+      if (contextParts.length) {
+        const context = document.createElement('p');
+        context.className = 'feedback-admin-context';
+        context.textContent = contextParts.join(' · ');
+        card.appendChild(context);
+      }
+      list.appendChild(card);
+    }
+  };
+
+  statusFilter.onchange = () => {
+    state.admin.feedbackStatus = statusFilter.value;
+    renderRows();
+  };
+  categoryFilter.onchange = () => {
+    state.admin.feedbackCategory = categoryFilter.value;
+    renderRows();
+  };
+  search.oninput = () => {
+    state.admin.feedbackQuery = search.value.trim();
+    renderRows();
+  };
+  renderRows();
 }
 
 async function renderAdminTemplates() {
@@ -1447,7 +1709,8 @@ function fillAdminTemplateRows(list) {
     slides.textContent = `${effective.deck?.slides?.length ?? 0} slides`;
     const styleName = document.createElement('span');
     const templateStyle = effective.deck?.style_id;
-    styleName.textContent = `Default style: ${state.styleLibrary.find((style) => (style.slug || style.id) === templateStyle)?.name || label(templateStyle || 'signature-african')}`;
+    const versionLabel = item.origin === 'builtin' ? 'Built-in' : `Version ${item.version ?? 1}`;
+    styleName.textContent = `Default style: ${state.styleLibrary.find((style) => (style.slug || style.id) === templateStyle)?.name || label(templateStyle || 'signature-african')} · ${versionLabel}`;
     meta.append(slides, styleName, statusBadge(item.origin === 'builtin' ? 'built-in' : item.status, Boolean(item.draft)));
     copy.append(title, description, meta);
 
@@ -1492,7 +1755,9 @@ async function updateAdminTemplate(item, status) {
   }, { method: 'PUT' });
   if (!result.ok) return showAdminMessage(`Could not update template: ${result.message}`, true);
   if (state.admin.page !== 'templates') return;
-  showAdminMessage(status === 'published' ? 'Template published for new users.' : 'Template archived from new-deck choices.');
+  showAdminMessage(status === 'published'
+    ? `Template version ${result.template.version ?? 1} published. Earlier versions remain unchanged.`
+    : 'Template archived from new-deck choices.');
   await renderAdminTemplates();
 }
 
@@ -1762,6 +2027,7 @@ function builtinStyleSettings(style) {
     background_hex: palette[0],
     foreground_hex: palette[1],
     accent_hex: palette[2],
+    surface_hex: '#1f2937',
     layout: 'stack',
   };
 }
@@ -1769,6 +2035,9 @@ function builtinStyleSettings(style) {
 function selectAdminStyle(style, { duplicate = false } = {}) {
   const form = $('#adminStyleForm');
   if (!form) return;
+  if (!duplicate && state.admin.selectedStyle?.id === style?.id && !state.admin.styleDirty) return;
+  if (!confirmAdminStyleDiscard()) return;
+  state.admin.styleDirty = false;
   state.admin.selectedStyle = duplicate ? null : style;
   $$('.style-library-item', $('#adminContent')).forEach((button) => {
     button.setAttribute('aria-pressed', String(button.dataset.styleId === state.admin.selectedStyle?.id));
@@ -1800,30 +2069,71 @@ function fillAdminStyleForm(style, duplicate = false) {
     settings,
   };
   const locked = Boolean(style?.is_system) && !duplicate;
+  state.admin.styleDirty = false;
+  const contract = state.meta.styleSettings;
+  const baseStyleLabels = {
+    'signature-african': 'Signature African',
+    'editorial-clean': 'Editorial Clean',
+    'mono-terminal': 'Mono Terminal',
+  };
+  const fieldLabels = {
+    base_style_id: 'Base look',
+    font_pair: 'Font family',
+    heading_font_pair: 'Heading font',
+    body_font_pair: 'Content font',
+    heading_font_size: 'Heading size (px)',
+    subtitle_font_size: 'Subtitle size (px)',
+    body_font_size: 'Content size (px)',
+    tagline_font_size: 'Tagline size (px)',
+    bullet_font_size: 'Bullet size (px)',
+    cta_font_size: 'CTA size (px)',
+    palette: 'Palette name',
+    background_hex: 'Background',
+    foreground_hex: 'Text',
+    accent_hex: 'Accent',
+    surface_hex: 'Surface',
+  };
+  const fieldMarkup = (field) => {
+    const definition = contract.fields[field];
+    const label = fieldLabels[field] ?? field.replaceAll('_', ' ');
+    if (definition.enum) {
+      const labels = baseStyleLabels;
+      const options = definition.enum.map((value) =>
+        `<option value="${value}">${labels[value] ?? value}</option>`).join('');
+      return `<label>${label}<select name="${field}">${options}</select></label>`;
+    }
+    if (contract.colorFields.includes(field)) {
+      return `<label>${label}<input name="${field}" type="color"></label>`;
+    }
+    if (definition.type === 'integer') {
+      const wide = field === 'heading_font_size' || field === 'body_font_size' ? ' class="admin-form-wide"' : '';
+      return `<label${wide}>${label}<input name="${field}" type="number" min="${definition.minimum}" max="${definition.maximum}" step="1"></label>`;
+    }
+    const maxLength = definition.maxLength ? ` maxlength="${definition.maxLength}"` : '';
+    const wide = field.endsWith('_font_pair') || field === 'palette' ? ' class="admin-form-wide"' : '';
+    const placeholder = field.endsWith('_font_pair')
+      ? ' placeholder="Use the base look\'s fonts"'
+      : field === 'palette' ? ' placeholder="Optional label"' : '';
+    return `<label${wide}>${label}<input name="${field}"${maxLength}${placeholder}></label>`;
+  };
+  const settingFields = Object.keys(contract.fields);
+  const selectFields = settingFields.filter((field) => contract.fields[field].enum);
+  const fontFields = settingFields.filter((field) => field.endsWith('_font_pair'));
+  const sizeFields = settingFields.filter((field) => contract.fields[field].type === 'integer');
+  const paletteFields = settingFields.filter((field) =>
+    !contract.fields[field].enum && !field.endsWith('_font_pair')
+    && contract.fields[field].type !== 'integer');
   form.innerHTML = `
     <fieldset><legend>Style identity</legend>
-      <label>Name<input name="name" maxlength="60" required></label>
-      <label>Slug<input name="slug" maxlength="40" required></label>
-      <label class="admin-form-wide">Description<textarea name="description" maxlength="220" rows="2"></textarea></label>
+      <label>Name<input name="name" maxlength="${contract.limits.name}" required></label>
+      <label>Slug<input name="slug" maxlength="${contract.limits.slug}" required></label>
+      <label class="admin-form-wide">Description<textarea name="description" maxlength="${contract.limits.description}" rows="2"></textarea></label>
     </fieldset>
-    <fieldset><legend>Typography and layout</legend>
-      <label>Base look<select name="base_style_id">
-        <option value="signature-african">Signature African</option>
-        <option value="editorial-clean">Editorial Clean</option>
-        <option value="mono-terminal">Mono Terminal</option>
-      </select></label>
-      <label>Layout<select name="layout">
-        <option value="stack">Balanced stack</option>
-        <option value="centered">Centered</option>
-        <option value="left-rail">Left rail</option>
-      </select></label>
-      <label class="admin-form-wide">Font family<input name="font_pair" maxlength="120" placeholder="Use the base look's fonts"></label>
+    <fieldset><legend>Typography and skin</legend>
+      ${[...selectFields, ...fontFields, ...sizeFields].map(fieldMarkup).join('')}
     </fieldset>
     <fieldset><legend>Palette</legend>
-      <label>Background<input name="background_hex" type="color"></label>
-      <label>Text<input name="foreground_hex" type="color"></label>
-      <label>Accent<input name="accent_hex" type="color"></label>
-      <label>Surface<input name="surface_hex" type="color" value="#1f2937"></label>
+      ${paletteFields.map(fieldMarkup).join('')}
     </fieldset>
     <div class="admin-style-actions">
       <button type="button" class="btn-ghost sm" data-save-status="draft"></button>
@@ -1831,18 +2141,19 @@ function fillAdminStyleForm(style, duplicate = false) {
       <button type="button" class="btn-ghost sm" data-save-status="archived"></button>
     </div>
   `;
-  for (const [name, value] of Object.entries({
+  const defaultSettings = builtinStyleSettings({
+    id: settings.base_style_id || contract.baseStyleIds[0],
+  });
+  const formValues = {
     name: initial.name,
     slug: initial.slug,
     description: initial.description,
-    base_style_id: settings.base_style_id || 'signature-african',
-    layout: settings.layout || 'stack',
-    font_pair: settings.font_pair || '',
-    background_hex: settings.background_hex || '#101a33',
-    foreground_hex: settings.foreground_hex || '#f0e7d4',
-    accent_hex: settings.accent_hex || '#d9a23b',
-    surface_hex: settings.surface_hex || '#1f2937',
-  })) {
+    ...Object.fromEntries(settingFields.map((field) => [
+      field,
+      settings[field] ?? defaultSettings[field] ?? contract.fields[field].enum?.[0] ?? '',
+    ])),
+  };
+  for (const [name, value] of Object.entries(formValues)) {
     const control = $(`[name="${name}"]`, form);
     if (control) control.value = value;
   }
@@ -1875,7 +2186,10 @@ function fillAdminStyleForm(style, duplicate = false) {
   draftButton.onclick = () => saveAdminStyle(form, 'draft', draftButton);
   archiveButton.onclick = () => saveAdminStyle(form, 'archived', archiveButton);
   const markStyleEdited = () => {
-    if (editorState && !locked) editorState.textContent = 'Unsaved changes';
+    if (!locked) {
+      state.admin.styleDirty = true;
+      if (editorState) editorState.textContent = 'Unsaved changes';
+    }
     refreshAdminStylePreview();
   };
   form.oninput = markStyleEdited;
@@ -1888,39 +2202,45 @@ function styleFormValue(form) {
   const name = String(data.get('name') ?? '').trim();
   const slug = String(data.get('slug') ?? '').trim()
     || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-$/g, '').slice(0, 40);
+  const settings = Object.fromEntries(Object.entries(state.meta.styleSettings.fields)
+    .flatMap(([field, definition]) => {
+      const value = String(data.get(field) ?? '').trim();
+      if (!value) return [];
+      return [[field, definition.type === 'integer' ? Number(value) : value]];
+    }));
   return {
     name,
     slug,
     description: String(data.get('description') ?? '').trim(),
     status: 'draft',
-    settings: {
-      base_style_id: String(data.get('base_style_id') ?? 'signature-african'),
-      layout: String(data.get('layout') ?? 'stack'),
-      font_pair: String(data.get('font_pair') ?? '').trim(),
-      background_hex: String(data.get('background_hex') ?? ''),
-      foreground_hex: String(data.get('foreground_hex') ?? ''),
-      accent_hex: String(data.get('accent_hex') ?? ''),
-      surface_hex: String(data.get('surface_hex') ?? ''),
-    },
+    settings,
   };
 }
 
 async function saveAdminStyle(form, status, button) {
+  if (state.admin.styleSaving) return;
   const style = styleFormValue(form);
   if (!style.name || !style.slug) return showAdminMessage('Enter a style name and slug.', true);
   style.status = status;
-  button.disabled = true;
+  state.admin.styleSaving = true;
+  const actions = $$('[data-save-status]', form);
+  actions.forEach((action) => { action.disabled = true; });
   const selected = state.admin.selectedStyle;
-  const result = selected && !selected.is_system
-    ? await api(`/api/admin/styles/${encodeURIComponent(selected.id)}`, style, { method: 'PUT' })
-    : await api('/api/admin/styles', style);
-  button.disabled = false;
-  if (!result.ok) {
-    if (state.admin.page === 'styles') showAdminMessage(`Could not save style: ${result.message}`, true);
+  let result;
+  try {
+    result = selected && !selected.is_system
+      ? await api(`/api/admin/styles/${encodeURIComponent(selected.id)}`, style, { method: 'PUT' })
+      : await api('/api/admin/styles', style);
+  } catch (error) {
+    showAdminMessage(`Could not save style: ${error.message}`, true);
     return;
+  } finally {
+    state.admin.styleSaving = false;
+    actions.forEach((action) => { action.disabled = false; });
   }
-  if (state.admin.page !== 'styles') return;
+  if (!result.ok) return showAdminMessage(`Could not save style: ${result.message}`, true);
   state.admin.selectedStyle = result.style;
+  state.admin.styleDirty = false;
   state.admin.styleFilter = status === 'archived' ? 'archived' : status === 'draft' ? 'draft' : 'published';
   showAdminMessage(status === 'published'
     ? 'Style published for new uses.'
@@ -1929,6 +2249,11 @@ async function saveAdminStyle(form, status, button) {
 }
 
 async function changeAdminStyleStatus(style, status) {
+  if (state.admin.styleSaving) {
+    showAdminMessage('A style update is already in progress.', true);
+    return;
+  }
+  if (!confirmAdminStyleDiscard()) return;
   const source = style.draft ? { ...style, ...style.draft } : style;
   const payload = {
     name: source.name,
@@ -1937,13 +2262,22 @@ async function changeAdminStyleStatus(style, status) {
     status,
     settings: source.settings ?? {},
   };
-  const result = await api(`/api/admin/styles/${encodeURIComponent(style.id)}`, payload, { method: 'PUT' });
-  if (!result.ok) {
-    if (state.admin.page === 'styles') showAdminMessage(`Could not update style: ${result.message}`, true);
+  state.admin.styleSaving = true;
+  let result;
+  try {
+    result = await api(`/api/admin/styles/${encodeURIComponent(style.id)}`, payload, { method: 'PUT' });
+  } catch (error) {
+    state.admin.styleSaving = false;
+    showAdminMessage(`Could not update style: ${error.message}`, true);
     return;
   }
-  if (state.admin.page !== 'styles') return;
+  state.admin.styleSaving = false;
+  if (!result.ok) {
+    showAdminMessage(`Could not update style: ${result.message}`, true);
+    return;
+  }
   state.admin.selectedStyle = result.style;
+  state.admin.styleDirty = false;
   state.admin.styleFilter = status;
   showAdminMessage(status === 'published' ? 'Style restored for new uses.' : 'Style archived from new uses.');
   await renderAdminStyles();
@@ -2300,6 +2634,7 @@ async function openEditor(deck, info = {}) {
   autosaveTimer = null;
   deckRevision = 0;
   $('#backBtn').disabled = false;
+  if (!deck.layout && state.meta?.layouts.includes(deck.theme?.layout)) deck.layout = deck.theme.layout;
   state.deck = deck;
   state.index = Number.isInteger(info.index) ? info.index : 0;
   state.deckId = info.deckId ?? null;
@@ -3048,8 +3383,10 @@ function previewThemeColor(property) {
 
 function restoreStyleTheme() {
   const selectedStyle = state.styleLibrary.find((style) => (style.slug || style.id) === state.deck.style_id);
-  if (selectedStyle && !selectedStyle.is_system) state.deck.theme = structuredClone(selectedStyle.settings || {});
-  else delete state.deck.theme;
+  if (selectedStyle && !selectedStyle.is_system) {
+    state.deck.theme = structuredClone(selectedStyle.settings || {});
+    delete state.deck.theme.layout;
+  } else delete state.deck.theme;
 }
 
 async function refreshThemePreview() {
@@ -3065,7 +3402,7 @@ function buildStyleTab() {
 
   const head = document.createElement('div');
   head.className = 'subhead';
-  head.textContent = 'Skin';
+  head.textContent = 'Styles — reusable across templates';
   host.appendChild(head);
 
   const grid = document.createElement('div');
@@ -3084,7 +3421,11 @@ function buildStyleTab() {
     card.onclick = async () => {
       const selectedStyle = state.styleLibrary.find((style) => (style.slug || style.id) === s);
       state.deck.style_id = s;
-      if (selectedStyle && !selectedStyle.is_system) state.deck.theme = structuredClone(selectedStyle.settings || {});
+      if (!state.deck.layout) state.deck.layout = state.deck.theme?.layout || 'stack';
+      if (selectedStyle && !selectedStyle.is_system) {
+        state.deck.theme = structuredClone(selectedStyle.settings || {});
+        delete state.deck.theme.layout;
+      }
       else delete state.deck.theme;
       await refreshThemePreview();
       const scrollTop = host.scrollTop;
@@ -3094,6 +3435,29 @@ function buildStyleTab() {
     grid.appendChild(card);
   }
   host.appendChild(grid);
+
+  const compositionHead = document.createElement('div');
+  compositionHead.className = 'subhead';
+  compositionHead.textContent = 'Template composition';
+  host.appendChild(compositionHead);
+  const compositionLabel = document.createElement('label');
+  compositionLabel.className = 'theme-font-label';
+  compositionLabel.textContent = 'Layout (saved with this template)';
+  const composition = document.createElement('select');
+  composition.setAttribute('aria-label', 'Template layout');
+  for (const layout of state.meta.layouts) {
+    const option = document.createElement('option');
+    option.value = layout;
+    option.textContent = layout === 'stack' ? 'Balanced stack' : label(layout);
+    composition.appendChild(option);
+  }
+  composition.value = state.deck.layout || state.deck.theme?.layout || 'stack';
+  composition.addEventListener('change', async () => {
+    state.deck.layout = composition.value;
+    await refreshThemePreview();
+  });
+  compositionLabel.appendChild(composition);
+  host.appendChild(compositionLabel);
 
   const themeHead = document.createElement('div');
   themeHead.className = 'subhead';
@@ -3159,6 +3523,80 @@ function buildStyleTab() {
   });
   fontLabel.appendChild(fontSelect);
   themeControls.appendChild(fontLabel);
+
+  const typography = document.createElement('div');
+  typography.className = 'theme-typography';
+  for (const [field, title] of [
+    ['heading_font_pair', 'Heading font'],
+    ['body_font_pair', 'Content font'],
+  ]) {
+    const labelEl = document.createElement('label');
+    labelEl.className = 'theme-font-label';
+    labelEl.textContent = title;
+    const select = document.createElement('select');
+    select.setAttribute('aria-label', title);
+    const automatic = document.createElement('option');
+    automatic.value = '';
+    automatic.textContent = 'Use skin typography';
+    select.appendChild(automatic);
+    for (const [name, value] of fontOptions.slice(1)) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = name;
+      select.appendChild(option);
+    }
+    const current = state.deck.theme?.[field] || '';
+    if (current && !fontOptions.some(([, value]) => value === current)) {
+      const custom = document.createElement('option');
+      custom.value = current;
+      custom.textContent = `Current: ${current}`;
+      select.appendChild(custom);
+    }
+    select.value = current;
+    select.addEventListener('change', async () => {
+      const theme = { ...(state.deck.theme || {}) };
+      if (select.value) theme[field] = select.value;
+      else delete theme[field];
+      if (Object.keys(theme).length) state.deck.theme = theme;
+      else delete state.deck.theme;
+      await refreshThemePreview();
+    });
+    labelEl.appendChild(select);
+    typography.appendChild(labelEl);
+  }
+  for (const [field, title, fallback] of [
+    ['heading_font_size', 'Heading max size', 132],
+    ['subtitle_font_size', 'Subtitle size', 40],
+    ['body_font_size', 'Content size', 34],
+    ['tagline_font_size', 'Tagline size', 26],
+    ['bullet_font_size', 'Bullet size', 30],
+    ['cta_font_size', 'CTA size', 32],
+  ]) {
+    const definition = state.meta.styleSettings.fields[field];
+    if (!definition) continue;
+    const labelEl = document.createElement('label');
+    labelEl.className = 'theme-size-label';
+    const text = document.createElement('span');
+    text.textContent = title;
+    const output = document.createElement('output');
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = String(definition.minimum);
+    slider.max = String(definition.maximum);
+    slider.step = '1';
+    slider.setAttribute('aria-label', title);
+    slider.value = String(state.deck.theme?.[field] ?? fallback);
+    output.textContent = `${slider.value}px`;
+    slider.addEventListener('input', () => {
+      const theme = { ...(state.deck.theme || {}), [field]: Number(slider.value) };
+      state.deck.theme = theme;
+      output.textContent = `${slider.value}px`;
+    });
+    slider.addEventListener('change', refreshThemePreview);
+    labelEl.append(text, output, slider);
+    typography.appendChild(labelEl);
+  }
+  themeControls.appendChild(typography);
 
   const themeActions = document.createElement('div');
   themeActions.className = 'theme-actions';

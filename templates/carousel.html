@@ -32,7 +32,13 @@
     overflow: hidden;
     isolation: isolate;
   }
-  #slide.theme-font-override * { font-family: inherit !important; }
+  #slide.theme-font-override * { font-family: var(--universal-font) !important; }
+  #slide.theme-role-font-override .heading,
+  #slide.theme-role-font-override .tagline,
+  #slide.theme-role-font-override .subtitle { font-family: var(--heading-font) !important; }
+  #slide.theme-role-font-override .body,
+  #slide.theme-role-font-override .bullets li,
+  #slide.theme-role-font-override .cta { font-family: var(--body-font) !important; }
 
   /* text blocks: never let a long unbroken token spill past the card edge */
   .tagline, .heading, .subtitle, .body, .bullets li, .cta, .foot, .page { overflow-wrap: anywhere; }
@@ -58,14 +64,14 @@
     font-weight: 700;
     letter-spacing: .16em;
     text-transform: uppercase;
-    font-size: 26px;
+    font-size: var(--tagline-size, 26px);
     margin-bottom: 26px;
   }
   .heading { font-weight: 800; line-height: 1.04; }        /* size set by autofit */
-  .subtitle { font-weight: 600; line-height: 1.15; margin-top: 18px; font-size: 40px; }
-  .body { line-height: 1.42; margin-top: 30px; font-size: 34px; max-width: 24ch; }
+  .subtitle { font-weight: 600; line-height: 1.15; margin-top: 18px; font-size: var(--subtitle-size, 40px); }
+  .body { line-height: 1.42; margin-top: 30px; font-size: var(--body-size, 34px); max-width: 24ch; }
   .bullets { list-style: none; margin-top: 34px; display: flex; flex-direction: column; gap: 20px; }
-  .bullets li { position: relative; padding-left: 46px; line-height: 1.3; font-size: 30px; }
+  .bullets li { position: relative; padding-left: 46px; line-height: 1.3; font-size: var(--bullet-size, 30px); }
   .bullets li::before {
     content: ""; position: absolute; left: 0; top: .55em;
     width: 20px; height: 3px; background: var(--accent);
@@ -97,7 +103,7 @@
   /* CTA slide */
   .cta {
     align-self: flex-start; margin-top: 40px;
-    font-weight: 700; font-size: 32px;
+    font-weight: 700; font-size: var(--cta-size, 32px);
     padding: 22px 40px; border-radius: 999px;
     background: var(--accent); color: var(--cta-fg);
   }
@@ -295,7 +301,8 @@
     const h = $slide.querySelector(".heading");
     const stack = $slide.querySelector(".stack");
     if (!h || !stack) return;
-    const CAP = 132, FLOOR = 34, MAX_LINES = 4;
+    const CAP = parseFloat(getComputedStyle($slide).getPropertyValue("--heading-size")) || 132;
+    const FLOOR = 34, MAX_LINES = 4;
 
     // Vertical budget = the stack minus what the other blocks actually use, so
     // a heading-only slide gets nearly the whole card and a crammed one gets
@@ -391,7 +398,7 @@
     const styleId = deck.style_id || "signature-african";
     const theme = deck.theme || {};
     root.setAttribute("data-style", theme.base_style_id || styleId);
-    root.setAttribute("data-layout", theme.layout || "stack");
+    root.setAttribute("data-layout", deck.layout || theme.layout || "stack");
 
     for (const [property, value] of [
       ["--bg", theme.background_hex],
@@ -399,11 +406,22 @@
       ["--surface", theme.surface_hex],
       ["--accent", theme.accent_hex],
       ["--cta-fg", theme.foreground_hex],
+      ["--universal-font", theme.font_pair],
+      ["--heading-font", theme.heading_font_pair || theme.font_pair],
+      ["--body-font", theme.body_font_pair || theme.font_pair],
+      ["--heading-size", theme.heading_font_size ? `${theme.heading_font_size}px` : null],
+      ["--subtitle-size", theme.subtitle_font_size ? `${theme.subtitle_font_size}px` : null],
+      ["--body-size", theme.body_font_size ? `${theme.body_font_size}px` : null],
+      ["--tagline-size", theme.tagline_font_size ? `${theme.tagline_font_size}px` : null],
+      ["--bullet-size", theme.bullet_font_size ? `${theme.bullet_font_size}px` : null],
+      ["--cta-size", theme.cta_font_size ? `${theme.cta_font_size}px` : null],
     ]) {
       $slide.style.removeProperty(property);
       if (value) $slide.style.setProperty(property, value);
     }
     $slide.classList.toggle("theme-font-override", Boolean(theme.font_pair));
+    $slide.classList.toggle("theme-role-font-override",
+      Boolean(theme.heading_font_pair || theme.body_font_pair));
     $slide.style.removeProperty("font-family");
     if (theme.font_pair) $slide.style.fontFamily = theme.font_pair;
 

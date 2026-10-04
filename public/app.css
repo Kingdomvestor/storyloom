@@ -369,9 +369,13 @@ textarea:focus, input:focus {
 }
 .knob-style { margin-top: 18px; }
 
-/* The swatch is 4:5 so it states the output shape, but three full-width 4:5
-   rectangles would out-shout the textarea above them — cap the row instead. */
-.styles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 430px; }
+/* Keep style tiles readable while letting new reusable styles join the row. */
+.styles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  max-width: 700px;
+}
 .stylecard {
   background: none; border: 1px solid var(--line); border-radius: 12px;
   padding: 7px; text-align: left;
@@ -768,6 +772,14 @@ textarea:focus, input:focus {
   color: var(--text); font: inherit; font-size: 12px; font-weight: 500;
   letter-spacing: 0; text-transform: none;
 }
+.theme-typography { display: grid; gap: 10px; }
+.theme-size-label {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px;
+  color: var(--dim); font-size: 10.5px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.theme-size-label output { color: var(--text); font-variant-numeric: tabular-nums; }
+.theme-size-label input[type="range"] { grid-column: 1 / -1; width: 100%; accent-color: var(--gold); }
 .theme-actions { display: flex; justify-content: flex-end; }
 
 .f { margin-bottom: 15px; }
@@ -915,7 +927,7 @@ textarea:focus, input:focus {
   .workspace { grid-template-columns: 132px minmax(0, 1fr) 310px; }
 }
 @media (max-width: 940px) {
-  .gallery, .styles { grid-template-columns: 1fr 1fr; }
+  .gallery { grid-template-columns: 1fr 1fr; }
   .workspace {
     grid-template-columns: 1fr; grid-template-rows: auto auto auto; height: auto;
   }
@@ -1155,6 +1167,45 @@ html[data-theme="light"] .authmsg {
 .deckcard .del svg { display: block; width: 17px; height: 17px; }
 .deckcard .del:hover { color: var(--red); border-color: color-mix(in srgb, var(--red) 30%, transparent); background: color-mix(in srgb, var(--red) 8%, transparent); }
 
+/* ========================================================= USER FEEDBACK */
+.feedback-dialog {
+  width: min(560px, calc(100vw - 28px)); max-height: min(760px, calc(100dvh - 28px));
+  padding: 0; overflow: auto; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel); color: var(--text); box-shadow: 0 24px 90px rgba(0, 0, 0, .4);
+}
+.feedback-dialog::backdrop { background: rgba(3, 5, 10, .68); backdrop-filter: blur(3px); }
+.feedback-dialog form { display: grid; gap: 9px; padding: 24px; }
+.feedback-dialog-head { display: flex; justify-content: space-between; align-items: start; gap: 14px; margin-bottom: 9px; }
+.feedback-dialog-head h2 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -.04em; }
+.feedback-dialog label { margin-top: 4px; color: var(--muted); font-size: 12px; font-weight: 650; }
+.feedback-dialog select, .feedback-dialog textarea {
+  width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 7px; background: var(--field); color: var(--text); font: inherit; font-size: 13px;
+}
+.feedback-dialog select { min-height: 42px; }
+.feedback-dialog textarea { min-height: 140px; resize: vertical; line-height: 1.55; }
+.feedback-dialog :is(button, select, textarea):focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+.feedback-form-meta { display: flex; justify-content: space-between; gap: 12px; color: var(--dim); font-size: 10px; line-height: 1.5; }
+.feedback-form-meta span:first-child { max-width: 34ch; }
+.feedback-form-meta span:last-child { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+.feedback-privacy { margin: 2px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.feedback-result { margin: 2px 0 0; padding: 9px 11px; border-left: 2px solid var(--gold); background: var(--panel-2); font-size: 12px; line-height: 1.5; }
+.feedback-result.error { border-color: var(--red); color: var(--red); }
+.feedback-dialog-actions { display: flex; justify-content: end; gap: 8px; margin-top: 8px; }
+.feedback-fab {
+  position: fixed; z-index: 20; right: max(22px, env(safe-area-inset-right));
+  bottom: max(22px, env(safe-area-inset-bottom)); display: inline-flex; align-items: center;
+  justify-content: center; gap: 10px; min-height: 54px; padding: 0 20px;
+  border: 1px solid #bce51d; border-radius: 999px; background: #d6ff2b;
+  color: #10120a; box-shadow: 0 8px 28px rgba(0, 0, 0, .28);
+  font: inherit; font-size: 13px; font-weight: 750; letter-spacing: -.01em;
+  cursor: pointer; transition: transform .16s ease, box-shadow .16s ease, background-color .16s ease;
+}
+.feedback-fab svg { width: 20px; height: 20px; flex: 0 0 20px; }
+.feedback-fab:hover { transform: translateY(-2px); background: #e0ff68; box-shadow: 0 12px 34px rgba(0, 0, 0, .34); }
+.feedback-fab:active { transform: translateY(0); }
+.feedback-fab:focus-visible { outline: 3px solid var(--text); outline-offset: 4px; }
+
 /* ======================================================= ADMIN CATALOGS */
 .view-admin { width: min(96vw, 1440px); margin: 0 auto; padding: 38px 28px 72px; }
 .admin-catalog { display: grid; gap: 20px; }
@@ -1245,6 +1296,20 @@ html[data-theme="light"] .authmsg {
 .admin-style-form .admin-form-wide { grid-column: 1 / -1; }
 .admin-style-actions { display: flex; flex-wrap: wrap; justify-content: end; gap: 8px; padding-top: 2px; }
 .admin-empty { padding: 24px 0; color: var(--muted); }
+.feedback-admin-toolbar { display: flex; flex-wrap: wrap; gap: 9px; }
+.feedback-admin-toolbar select, .feedback-admin-toolbar input {
+  min-height: 38px; padding: 7px 10px; border: 1px solid var(--line-soft); border-radius: 7px;
+  background: var(--panel); color: var(--text); font: inherit; font-size: 12px;
+}
+.feedback-admin-toolbar input { flex: 1 1 220px; min-width: 180px; }
+.feedback-admin-list { display: grid; gap: 10px; }
+.feedback-admin-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); }
+.feedback-admin-card-head { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+.feedback-admin-meta { display: flex; flex-wrap: wrap; gap: 6px 12px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.feedback-admin-meta strong { color: var(--text); font-weight: 650; }
+.feedback-admin-card select { min-height: 35px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--field); color: var(--text); font: inherit; font-size: 11px; }
+.feedback-admin-message { margin: 0; color: var(--text); font-size: 13px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.feedback-admin-context { color: var(--dim); font-size: 10px; }
 .admin-style-empty { margin: 0; padding: 14px 4px; font-size: 12px; }
 .admin-message { margin: 0; padding: 11px 13px; border-left: 2px solid var(--gold); background: var(--panel); color: var(--text); font-size: 13px; line-height: 1.5; }
 .admin-message.error { border-left-color: var(--red); }
@@ -1288,6 +1353,14 @@ html[data-theme="light"] .authmsg {
   .dashhero-action-copy h2 { font-size: 24px; }
   .dashsectionhead { align-items: center; flex-wrap: wrap; padding-top: 18px; }
   .dashsection-tools { width: 100%; justify-content: space-between; }
+  .dashsection-tools { flex-wrap: wrap; }
+  .feedback-fab {
+    right: max(14px, env(safe-area-inset-right));
+    bottom: max(14px, env(safe-area-inset-bottom));
+    min-height: 50px; padding-inline: 16px;
+  }
+  .feedback-admin-card-head { flex-direction: column; }
+  .feedback-dialog form { padding: 20px; }
   .deckgrid { grid-template-columns: 1fr; }
   .view-admin { width: 100%; padding: 26px 14px 56px; }
   .admin-catalog-head { align-items: start; flex-direction: column; gap: 16px; }
@@ -1352,6 +1425,9 @@ html[data-theme="light"] .authmsg {
 }
 @media (max-width: 480px) { .editbar { padding-inline: 12px; } }
 @media (max-width: 340px) { .editbar { padding-inline: 6px; } }
+@media (prefers-reduced-motion: reduce) {
+  .feedback-fab { transition: none; }
+}
 
 /* header credits pill */
 .pill.credits b { color: var(--gold, #c8a24a); }

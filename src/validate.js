@@ -149,7 +149,16 @@ export function repairDeck(deck) {
     const allowed = schema.properties.theme.properties;
     const theme = {};
     for (const key of Object.keys(allowed)) {
-      if (typeof d.theme[key] === 'string') theme[key] = clamp(d.theme[key], allowed[key].maxLength ?? Infinity);
+      const property = allowed[key];
+      const value = d.theme[key];
+      if (property.type === 'string' && typeof value === 'string') {
+        theme[key] = clamp(value, property.maxLength ?? Infinity);
+      } else if (property.type === 'integer' && Number.isInteger(value)
+        && value >= property.minimum && value <= property.maximum) {
+        theme[key] = value;
+      } else if (property.enum?.includes(value)) {
+        theme[key] = value;
+      }
     }
     if (theme.base_style_id && !['signature-african', 'editorial-clean', 'mono-terminal'].includes(theme.base_style_id)) {
       delete theme.base_style_id;
@@ -179,6 +188,7 @@ export function repairDeck(deck) {
   d.platform = ['linkedin', 'instagram'].includes(d.platform) ? d.platform : 'linkedin';
   d.aspect_ratio = '4:5';
   d.style_id = typeof d.style_id === 'string' && d.style_id.trim() ? d.style_id.trim().slice(0, 40) : 'signature-african';
+  if (d.layout !== undefined && !schema.properties.layout.enum.includes(d.layout)) delete d.layout;
   d.narrative_type = schema.properties.narrative_type.enum.includes(d.narrative_type)
     ? d.narrative_type
     : 'listicle';
