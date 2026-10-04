@@ -12,6 +12,9 @@ node_modules/
 # generated output (regenerate with: npm run render:all)
 out/
 
+# local project notes
+MEMORY.md
+
 # OS / editor noise
 Thumbs.db
 Desktop.ini
