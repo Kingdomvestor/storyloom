@@ -138,7 +138,7 @@
 
 <!-- =============================================================== ADMIN -->
 <main class="view view-admin" id="viewAdmin">
-  <section class="admin-catalog">
+  <section class="admin-catalog" aria-labelledby="adminTitle">
     <header class="admin-catalog-head">
       <div>
         <p class="dash-eyebrow">Studio administration</p>
@@ -153,7 +153,17 @@
       <button class="admin-back" id="adminBackBtn" type="button">Back to studio</button>
     </nav>
     <p class="admin-message" id="adminMessage" role="status" aria-live="polite" hidden></p>
-    <div id="adminContent"></div>
+    <div id="adminContent" aria-busy="false"></div>
+  </section>
+</main>
+
+<!-- =========================================================== NOT FOUND -->
+<main class="view view-not-found" id="viewNotFound">
+  <section>
+    <p class="dash-eyebrow">404 · Page not found</p>
+    <h1>This page isn’t available.</h1>
+    <p>The address may be incorrect, or this page may not be available to your account.</p>
+    <a class="btn-go sm" href="/studio">Return to the studio</a>
   </section>
 </main>
 
@@ -161,7 +171,7 @@
 <main class="view view-compose" id="viewCompose">
   <div class="hero">
     <h1>Turn a thought into a <b>carousel</b>.</h1>
-    <p>Paste text or a link. You get 5–10 editable slides at 1080&times;1350 <br> Edit to <em>your</em> satisfaction.</p>
+    <p>Paste text or a link. You get 5–10 editable slides at 1080&times;1350 <br><em>Edit to your satisfaction</em></p>
   </div>
 
   <section class="new-deck-choice" id="newDeckChoice" hidden>
@@ -248,7 +258,7 @@
     </div>
   </section>
 
-  <section class="gallery" id="gallery"></section>
+  <section class="gallery" id="gallery" aria-label="Available templates" aria-live="polite"></section>
 </main>
 
 <!-- =============================================================== EDITOR -->

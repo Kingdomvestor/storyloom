@@ -20,19 +20,23 @@ function mountChoiceFlow() {
   `, { url: 'https://storyloom.local/' });
   const { window } = dom;
   const doc = window.document;
+  window.state = { composeMode: null };
 
   window.$ = (sel, root = doc) => root.querySelector(sel);
   window.$$ = (sel, root = doc) => [...root.querySelectorAll(sel)];
 
   window.loadGallery = () => {};
+  window.setNewFlowLocation = () => {};
   const { showNewDeckChoice, beginNewDeckChoice } = new Function(
     'document',
     'window',
+    'state',
     '$',
     '$$',
     'loadGallery',
+    'setNewFlowLocation',
     `${choiceFlowScript}; return { showNewDeckChoice, beginNewDeckChoice };`
-  )(doc, window, window.$, window.$$, window.loadGallery);
+  )(doc, window, window.state, window.$, window.$$, window.loadGallery, window.setNewFlowLocation);
 
   window.showNewDeckChoice = showNewDeckChoice;
   window.beginNewDeckChoice = beginNewDeckChoice;

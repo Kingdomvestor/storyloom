@@ -959,7 +959,10 @@ app.get('/api/health', async (_req, res) => {
 // from disk. Serving it read-only rather than copying it into public/ is what
 // keeps preview and export from drifting.
 app.get('/', (_req, res) => res.sendFile(join(ROOT, 'public', 'landing.html')));
-app.get('/studio', (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
+app.get(/^\/studio\/?$/, (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
+app.get('/studio/new', (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
+app.get(/^\/studio\/deck\/[^/]+\/?$/, (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
+app.get(/^\/studio\/admin\/(templates|styles)\/?$/, (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
 app.get('/signin', (_req, res) => res.sendFile(join(ROOT, 'public', 'index.html')));
 app.use('/templates', express.static(join(ROOT, 'templates')));
 app.use('/out', express.static(join(ROOT, 'out')));
@@ -968,7 +971,7 @@ app.use(express.static(join(ROOT, 'public')));
 
 app.use((req, res) => {
   if (req.path.startsWith('/api/')) return fail(res, 'not_found', `No such endpoint: ${req.path}`);
-  res.status(404).sendFile(join(ROOT, 'public', 'index.html'));
+  res.status(404).type('text/plain').send('Not found.');
 });
 
 // ----------------------------------------------------------------------- start

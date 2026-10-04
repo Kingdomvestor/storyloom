@@ -41,8 +41,11 @@ test('admin catalogs filter correctly and custom styles can be archived', async 
     { id: 'style-archived', name: 'Custom Archived', slug: 'custom-archived', status: 'archived', is_system: false, settings: {} },
   ];
 
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const page = await browser.newPage();
+  await page.setViewport({ width: 1280, height: 900 });
   const pageErrors = [];
+  let adminTemplateListRequests = 0;
+  let adminStyleListRequests = 0;
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setRequestInterception(true);
   page.on('request', (request) => {
@@ -71,12 +74,22 @@ test('admin catalogs filter correctly and custom styles can be archived', async 
         meta.supabase = { url: 'https://unit.test', anonKey: 'test' };
         await respond(meta);
       } else if (url.pathname === '/api/decks') {
-        await respond({ ok: true, decks: [], credits: 5, plan: 'free', defaultBrand: null });
+        await respond(request.method() === 'POST'
+          ? { ok: true, id: 'saved-template-id' }
+          : { ok: true, decks: [], credits: 5, plan: 'free', defaultBrand: null });
+      } else if (url.pathname === '/api/decks/route-test') {
+        await respond({ ok: true, deck: sampleDeck });
       } else if (url.pathname === '/api/styles') {
         await respond({ ok: true, isAdmin: true, styles: styles.filter((style) => style.status === 'published') });
+      } else if (url.pathname === '/api/brands') {
+        await respond({ ok: true, brands: [] });
+      } else if (url.pathname === '/api/validate') {
+        await respond({ ok: true, errors: [], warnings: [] });
       } else if (url.pathname === '/api/admin/templates') {
+        adminTemplateListRequests += 1;
         await respond({ ok: true, templates });
       } else if (url.pathname === '/api/admin/styles') {
+        adminStyleListRequests += 1;
         await respond({ ok: true, styles });
       } else if (url.pathname.startsWith('/api/admin/styles/') && request.method() === 'PUT') {
         const id = url.pathname.split('/').pop();
@@ -97,7 +110,9 @@ test('admin catalogs filter correctly and custom styles can be archived', async 
     await page.click('#adminLink');
     await page.waitForFunction(() => document.documentElement.dataset.view === 'admin'
       && document.querySelectorAll('.admin-template-row').length === 3);
+    assert.equal(new URL(page.url()).pathname, '/studio/admin/templates');
 
+    const templateRequestsBeforeFilter = adminTemplateListRequests;
     await page.evaluate(() => {
       const button = [...document.querySelectorAll('.admin-filters button')]
         .find((item) => item.textContent === 'Drafts');
@@ -107,9 +122,23 @@ test('admin catalogs filter correctly and custom styles can be archived', async 
     const draftTemplateNames = await page.$$eval('.admin-template-row h2', (nodes) =>
       nodes.map((node) => node.textContent));
     assert.deepEqual(draftTemplateNames.sort(), ['Published draft edit', 'Unpublished template']);
+    assert.equal(adminTemplateListRequests, templateRequestsBeforeFilter);
 
+    await page.evaluate(() => {
+      [...document.querySelectorAll('.admin-filters button')]
+        .find((item) => item.textContent === 'Built-in').click();
+    });
+    await page.waitForFunction(() => document.querySelectorAll('.admin-template-row').length === 1);
+    assert.equal(adminTemplateListRequests, templateRequestsBeforeFilter);
     await page.click('.admin-nav [data-admin-page="styles"]');
     await page.waitForSelector('.admin-style-row');
+    await page.waitForFunction(() => document.querySelector('#adminStylePreview')
+      ?.contentDocument?.documentElement.dataset.ready === 'true');
+    assert.equal(new URL(page.url()).pathname, '/studio/admin/styles');
+    assert.equal(await page.$eval('.admin-filters button[aria-pressed="true"]', (button) =>
+      button.textContent), 'All');
+    const styleRequestsBeforeFilter = adminStyleListRequests;
+    await page.$eval('#adminStylePreview', (frame) => { frame.dataset.instanceToken = 'preserved'; });
     await page.evaluate(() => {
       const button = [...document.querySelectorAll('.admin-filters button')]
         .find((item) => item.textContent === 'Drafts');
@@ -119,6 +148,8 @@ test('admin catalogs filter correctly and custom styles can be archived', async 
     const draftStyleNames = await page.$$eval('.admin-style-row strong', (nodes) =>
       nodes.map((node) => node.textContent));
     assert.deepEqual(draftStyleNames, ['Custom Draft']);
+    assert.equal(adminStyleListRequests, styleRequestsBeforeFilter);
+    assert.equal(await page.$eval('#adminStylePreview', (frame) => frame.dataset.instanceToken), 'preserved');
 
     await page.evaluate(() => {
       const button = [...document.querySelectorAll('.admin-filters button')]
@@ -135,7 +166,66 @@ test('admin catalogs filter correctly and custom styles can be archived', async 
     await page.waitForFunction(() => document.querySelector('#adminMessage')?.textContent
       === 'Style archived from new uses.');
     assert.equal(styles.find((style) => style.id === 'style-public').status, 'archived');
+    await page.setViewport({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await page.setViewport({ width: 1280, height: 900 });
 
+    await page.goto(`${base}/studio/admin/styles`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'admin'
+      && document.querySelector('.admin-style-row'));
+    await page.goto(`${base}/studio/admin/templates`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'admin'
+      && document.querySelectorAll('.admin-template-row').length === 3);
+    await page.goto(`${base}/studio/deck/route-test`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction((title) => document.documentElement.dataset.view === 'editor'
+      && document.querySelector('#deckTitle')?.value === title, {}, sampleDeck.title);
+    assert.equal(new URL(page.url()).pathname, '/studio/deck/route-test');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction((title) => document.documentElement.dataset.view === 'editor'
+      && document.querySelector('#deckTitle')?.value === title, {}, sampleDeck.title);
+    assert.equal(new URL(page.url()).pathname, '/studio/deck/route-test');
+    await page.goto(`${base}/studio`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'dashboard');
+    await page.click('#newDeckBtn');
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'compose'
+      && !document.querySelector('#newDeckChoice').hidden);
+    await page.click('#newDeckChoice [data-start-mode="template"]');
+    await page.waitForSelector('#gallery .gcard');
+    await page.click('#gallery .gcard');
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'editor');
+    await page.click('#backBtn');
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'compose'
+      && !document.querySelector('#gallery').hidden
+      && document.querySelector('#gallery .gcard'));
+    await page.click('#gallery .gcard');
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'editor');
+    await page.goBack({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'compose'
+      && !document.querySelector('#gallery').hidden
+      && document.querySelector('#gallery .gcard'));
+    await page.goto(`${base}/studio/new?step=template`, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'compose'
+      && !document.querySelector('#gallery').hidden
+      && document.querySelector('#gallery .gcard'));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'compose'
+      && !document.querySelector('#gallery').hidden
+      && document.querySelector('#gallery .gcard'));
+    await page.click('#gallery .gcard');
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'editor');
+    assert.equal(new URL(page.url()).pathname, '/studio/new');
+    assert.equal(new URL(page.url()).search, '?draft=1');
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'editor');
+    await page.$eval('#deckTitle', (input) => {
+      input.value = 'Saved from template';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.waitForFunction(() => new URL(location.href).pathname === '/studio/deck/saved-template-id');
+    await page.goBack({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'compose'
+      && !document.querySelector('#gallery').hidden
+      && document.querySelector('#gallery .gcard'));
     await page.setViewport({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     assert.deepEqual(pageErrors, []);

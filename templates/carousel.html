@@ -80,10 +80,16 @@
   }
   .foot { display: flex; align-items: center; gap: 16px; font-size: 24px; }
   .foot .avatar {
+    position: relative; overflow: hidden;
     width: 46px; height: 46px; border-radius: 50%;
     display: grid; place-items: center; font-weight: 800; font-size: 22px;
     background: var(--accent); color: var(--bg);
   }
+  .foot .avatar img {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    border-radius: inherit; object-fit: cover;
+  }
+  .foot .avatar.has-logo .avatar-initial { display: none; }
   .foot .who b { font-weight: 700; }
   .foot .who span { display: block; opacity: .7; font-size: 20px; }
   .page { font-size: 22px; opacity: .6; font-variant-numeric: tabular-nums; }
@@ -196,6 +202,15 @@
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
+  function logoUrl(value) {
+    try {
+      const url = new URL(String(value ?? ""));
+      return url.protocol === "https:" ? url.href : "";
+    } catch {
+      return "";
+    }
+  }
+
   const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
   // Wrap each highlight substring (case-insensitive) in <span class="hl">.
@@ -238,14 +253,15 @@
     const b = deck.brand || {};
     const name = b.name || "";
     const handle = b.handle || "";
+    const logo = logoUrl(b.logo_url);
     // Nothing to show → render nothing. An empty footrow still eats ~80px of
     // card, which reads as a layout bug on brandless (template-first) decks.
-    if (!name && !handle && !s.page_label) return "";
+    if (!name && !handle && !logo && !s.page_label) return "";
     const initial = (name || handle || "V").replace(/^@/, "").charAt(0).toUpperCase();
-    const brand = (name || handle)
+    const brand = (name || handle || logo)
       ? `<div class="foot">
-           <div class="avatar">${esc(initial)}</div>
-           <div class="who"><b>${esc(name || handle)}</b>${name && handle ? `<span>${esc(handle)}</span>` : ""}</div>
+           <div class="avatar${logo ? " has-logo" : ""}"><span class="avatar-initial">${esc(initial)}</span>${logo ? `<img src="${esc(logo)}" alt="${name || handle ? "" : "Brand logo"}" />` : ""}</div>
+           ${name || handle ? `<div class="who"><b>${esc(name || handle)}</b>${name && handle ? `<span>${esc(handle)}</span>` : ""}</div>` : ""}
          </div>`
       : `<div class="foot"></div>`;
     const page = s.page_label ? `<div class="page">${esc(s.page_label)}</div>` : `<div class="page"></div>`;
@@ -349,6 +365,19 @@
       await (document.fonts?.ready ?? Promise.resolve());
       await Promise.all(FONT_PROBES.map((f) => document.fonts?.load(f).catch(() => {})));
     } catch { /* offline → fallback fonts, still render */ }
+    const logoImages = [...$slide.querySelectorAll(".avatar img")];
+    if (logoImages.length) {
+      logoImages.forEach((image) => {
+        image.addEventListener("error", () => image.parentElement.classList.remove("has-logo"), { once: true });
+        if (image.complete && !image.naturalWidth) image.parentElement.classList.remove("has-logo");
+      });
+      let timer;
+      await Promise.race([
+        Promise.all(logoImages.map((image) => image.decode().catch(() => {}))),
+        new Promise((resolve) => { timer = setTimeout(resolve, 5000); }),
+      ]);
+      clearTimeout(timer);
+    }
     // two frames so layout + autofit have painted
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     root.dataset.ready = "true";

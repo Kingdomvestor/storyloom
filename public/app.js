@@ -47,6 +47,9 @@ const state = {
   deckId: null,
   deck: null,
   adminTemplate: null,
+  editorReturn: null,
+  adminReturn: null,
+  composeMode: 'choice',
   index: 0,
   warnings: [],
   errors: [],
@@ -58,7 +61,19 @@ const state = {
   styleLibrary: [],
   isAdmin: false,
   compose: { src: 'text', slides: 'auto', narrative: 'listicle', style: 'signature-african', platform: 'linkedin' },
-  admin: { page: 'templates', filter: 'all', query: '', templates: [], styles: [], selectedStyle: null, sampleDeck: null },
+  admin: {
+    page: 'templates',
+    templateFilter: 'all',
+    styleFilter: 'all',
+    query: '',
+    styleQuery: '',
+    renderId: 0,
+    previewObserver: null,
+    templates: [],
+    styles: [],
+    selectedStyle: null,
+    sampleDeck: null,
+  },
 };
 
 const EDITOR_SNAPSHOT_KEY = 'storyloom.editor-snapshot';
@@ -104,6 +119,62 @@ async function api(path, body, opts = {}) {
   }
 }
 
+function safeReturnPath(value) {
+  if (typeof value !== 'string' || !value.startsWith('/') || value.startsWith('//') || value.includes('\\')) {
+    return null;
+  }
+
+  let url;
+  try {
+    url = new URL(value, location.origin);
+  } catch {
+    return null;
+  }
+  if (url.origin !== location.origin || url.hash) return null;
+
+  if (url.pathname === '/studio') return '/studio';
+  if (url.pathname === '/studio/new') {
+    const step = url.searchParams.get('step');
+    return step === 'compose' || step === 'template' ? `${url.pathname}?step=${step}` : '/studio/new';
+  }
+  if (/^\/studio\/deck\/[^/]+$/.test(url.pathname)) return url.pathname;
+  if (/^\/studio\/admin\/(templates|styles)\/?$/.test(url.pathname)) {
+    return url.pathname.replace(/\/$/, '');
+  }
+  return null;
+}
+
+function signInNextPath() {
+  return safeReturnPath(new URLSearchParams(location.search).get('next'));
+}
+
+function signInCallbackUrl() {
+  const url = new URL('/signin', location.origin);
+  const next = signInNextPath()
+    ?? safeReturnPath(`${location.pathname}${location.search}`);
+  if (next) url.searchParams.set('next', next);
+  return url.href;
+}
+
+function redirectToSignIn() {
+  const destination = safeReturnPath(`${location.pathname}${location.search}`);
+  const url = new URL('/signin', location.origin);
+  if (destination) url.searchParams.set('next', destination);
+  window.history.replaceState(null, '', url);
+}
+
+function setNewFlowLocation(mode, { replace = false, draft = false } = {}) {
+  const url = new URL('/studio/new', location.origin);
+  if (draft) url.searchParams.set('draft', '1');
+  else if (mode === 'compose' || mode === 'gallery') {
+    url.searchParams.set('step', mode === 'gallery' ? 'template' : mode);
+  }
+  const method = replace ? 'replaceState' : 'pushState';
+  if (`${url.pathname}${url.search}` !== `${location.pathname}${location.search}`) {
+    window.history[method](window.history.state, '', url);
+  }
+}
+
 // ------------------------------------------------------------------ accounts
 async function initSupabase(cfg) {
   if (!cfg) return null;                        // unconfigured server → stay null
@@ -133,16 +204,27 @@ async function applySession(session, { navigate = true } = {}) {
   if (!state.user) {
     state.credits = null;
     state.deckId = null;
-    if (navigate) document.documentElement.dataset.view = 'auth';
+    if (navigate) {
+      if (location.pathname !== '/signin') redirectToSignIn();
+      document.documentElement.dataset.view = 'auth';
+    }
     return;
   }
   $('#userEmail').textContent = state.user.email;
   await loadDashboard();                        // sets credits + grid
   if (sb) await loadStyleLibrary();
   if (state.user && navigate) {
+    const next = signInNextPath();
+    if (next) window.history.replaceState(window.history.state, '', next);
     const restoredEditor = await restoreEditorFromLocation();
     const restoredAdmin = restoredEditor ? false : await restoreAdminFromLocation();
-    if (!restoredEditor && !restoredAdmin) document.documentElement.dataset.view = 'dashboard';
+    const restoredNewFlow = restoredEditor || restoredAdmin
+      ? false
+      : await restoreNewFlowFromLocation();
+    if (!restoredEditor && !restoredAdmin && !restoredNewFlow) {
+      document.documentElement.dataset.view = 'dashboard';
+      window.history.replaceState(window.history.state, '', '/studio');
+    }
   }
 }
 
@@ -270,7 +352,7 @@ function wireAuth() {
 
     if (mode === 'reset') {
       const { error } = await sb.auth.resetPasswordForEmail(email, {
-        redirectTo: new URL('/signin', window.location.origin).href,
+        redirectTo: signInCallbackUrl(),
       });
       $('#authSubmit').disabled = false;
       if (error) {
@@ -300,7 +382,7 @@ function wireAuth() {
       ? await sb.auth.signUp({
         email,
         password,
-        options: { emailRedirectTo: new URL('/signin', window.location.origin).href },
+        options: { emailRedirectTo: signInCallbackUrl() },
       })
       : await sb.auth.signInWithPassword({ email, password });
     $('#authSubmit').disabled = false;
@@ -324,7 +406,7 @@ function wireAuth() {
     const { error } = await sb.auth.resend({
       type: 'signup',
       email,
-      options: { emailRedirectTo: new URL('/signin', window.location.origin).href },
+      options: { emailRedirectTo: signInCallbackUrl() },
     });
     resend.disabled = false;
     if (error) {
@@ -492,28 +574,36 @@ async function openSavedDeck(id) {
   await openEditor(r.deck, { deckId: id });
 }
 
-function updateEditorLocation() {
+function updateEditorLocation({ replace = false } = {}) {
   const url = new URL(location.href);
-  url.pathname = '/studio';
+  url.pathname = state.adminTemplate?.id
+    ? '/studio/admin/templates'
+    : state.deckId ? `/studio/deck/${encodeURIComponent(state.deckId)}` : '/studio/new';
   url.search = '';
   url.hash = '';
   if (state.adminTemplate?.id) url.searchParams.set('template', state.adminTemplate.id);
-  else if (state.deckId) url.searchParams.set('deck', state.deckId);
-  else url.searchParams.set('draft', '1');
-  window.history.replaceState(null, '', url);
+  else if (!state.deckId) url.searchParams.set('draft', '1');
+  if (url.pathname === location.pathname && url.search === location.search) return;
+  window.history[replace ? 'replaceState' : 'pushState'](null, '', url);
 }
 
-function clearEditorLocation() {
-  const url = new URL(location.href);
-  url.pathname = '/studio';
-  url.search = '';
-  url.hash = '';
-  window.history.replaceState(null, '', url);
+function clearEditorSnapshot() {
   try {
     sessionStorage.removeItem(EDITOR_SNAPSHOT_KEY);
   } catch (error) {
     console.error('Could not clear the local editor recovery snapshot.', error);
   }
+}
+
+function clearEditorLocation({ replace = false } = {}) {
+  const url = new URL(location.href);
+  url.pathname = '/studio';
+  url.search = '';
+  url.hash = '';
+  if (url.pathname !== location.pathname || url.search !== location.search) {
+    window.history[replace ? 'replaceState' : 'pushState'](null, '', url);
+  }
+  clearEditorSnapshot();
 }
 
 function saveEditorSnapshot() {
@@ -523,6 +613,7 @@ function saveEditorSnapshot() {
       version: 1,
       deckId: state.deckId,
       adminTemplate: state.adminTemplate,
+      editorReturn: state.editorReturn,
       deck: state.deck,
       index: state.index,
       dirty: state.dirty,
@@ -562,12 +653,14 @@ async function restoreEditorFromLocation() {
   if (editorRestorePromise) return editorRestorePromise;
   const pending = (async () => {
     const params = new URLSearchParams(location.search);
-    const deckId = params.get('deck');
+    const deckPath = /^\/studio\/deck\/([^/]+)$/.exec(location.pathname);
+    const deckId = deckPath ? decodeURIComponent(deckPath[1]) : params.get('deck');
     const templateId = params.get('template');
-    const isDraft = params.get('draft') === '1';
+    const isDraft = params.get('draft') === '1'
+      && (location.pathname === '/studio/new' || location.pathname === '/studio');
     if (!deckId && !templateId && !isDraft) return false;
     if (templateId && !state.isAdmin) {
-      clearEditorLocation();
+      clearEditorLocation({ replace: true });
       return false;
     }
     if (document.documentElement.dataset.view === 'editor'
@@ -579,6 +672,7 @@ async function restoreEditorFromLocation() {
     if (templateId && snapshot?.adminTemplate?.id === templateId && snapshot.dirty) {
       await openEditor(snapshot.deck, {
         templateAdmin: snapshot.adminTemplate,
+        returnTo: snapshot.editorReturn,
         index: snapshot.index,
         autoSave: true,
       });
@@ -599,18 +693,20 @@ async function restoreEditorFromLocation() {
               status: item.status,
               hasDraft: Boolean(item.draft),
             },
+            returnTo: snapshot?.editorReturn,
             index: snapshot?.adminTemplate?.id === templateId ? snapshot.index : 0,
           });
           return true;
         }
       }
       showAdminMessage('Could not restore this template. Check the library and try again.', true);
-      clearEditorLocation();
+      clearEditorLocation({ replace: true });
       return false;
     }
     if (deckId && snapshot?.deckId === deckId && snapshot.dirty) {
       await openEditor(snapshot.deck, {
         deckId,
+        returnTo: snapshot.editorReturn,
         index: snapshot.index,
         autoSave: true,
       });
@@ -618,6 +714,7 @@ async function restoreEditorFromLocation() {
     }
     if (isDraft && snapshot && !snapshot.deckId) {
       await openEditor(snapshot.deck, {
+        returnTo: snapshot.editorReturn,
         index: snapshot.index,
         autoSave: snapshot.dirty,
       });
@@ -628,6 +725,7 @@ async function restoreEditorFromLocation() {
       if (result.ok) {
         await openEditor(result.deck, {
           deckId,
+          returnTo: snapshot?.editorReturn,
           index: snapshot?.deckId === deckId ? snapshot.index : 0,
         });
         return true;
@@ -642,7 +740,10 @@ async function restoreEditorFromLocation() {
       error.hidden = false;
       error.textContent = 'This unsaved editor session is no longer available in this tab.';
     }
-    clearEditorLocation();
+    if (isDraft && location.pathname === '/studio/new') {
+      setNewFlowLocation('choice', { replace: true });
+      clearEditorSnapshot();
+    } else clearEditorLocation({ replace: true });
     return false;
   })();
   editorRestorePromise = pending;
@@ -654,13 +755,42 @@ async function restoreEditorFromLocation() {
 }
 
 async function restoreAdminFromLocation() {
-  const page = new URLSearchParams(location.search).get('admin');
-  if (!page) return false;
-  if (!state.isAdmin) {
-    clearEditorLocation();
+  const route = /^\/studio\/admin\/(templates|styles)\/?$/.exec(location.pathname);
+  const legacyPage = new URLSearchParams(location.search).get('admin');
+  const page = route?.[1] ?? (['templates', 'styles'].includes(legacyPage) ? legacyPage : null);
+  if (!page) {
+    if (location.pathname.startsWith('/studio/admin/')) clearEditorLocation({ replace: true });
     return false;
   }
+  if (!state.isAdmin) {
+    document.documentElement.dataset.view = 'not-found';
+    return true;
+  }
+  if (!route && legacyPage) {
+    const url = new URL(location.href);
+    url.pathname = `/studio/admin/${page}`;
+    url.search = '';
+    window.history.replaceState(null, '', url);
+  }
   return openAdminPage(page, { navigate: false });
+}
+
+async function restoreNewFlowFromLocation() {
+  if (location.pathname !== '/studio/new') return false;
+  const params = new URLSearchParams(location.search);
+  const mode = params.get('step') === 'compose'
+    ? 'composer'
+    : params.get('step') === 'template' ? 'gallery' : 'choice';
+  state.deckId = null;
+  state.adminTemplate = null;
+  state.composeMode = mode;
+  setNewFlowLocation(mode === 'gallery' ? 'gallery' : mode === 'composer' ? 'compose' : 'choice', { replace: true });
+  document.documentElement.dataset.view = 'compose';
+  $('#newDeckChoice').hidden = mode !== 'choice';
+  $('#composer').hidden = mode !== 'composer';
+  $('#gallery').hidden = mode !== 'gallery';
+  if (mode === 'gallery') await loadGallery();
+  return true;
 }
 
 function wireDashboard() {
@@ -672,9 +802,11 @@ function wireDashboard() {
     };
   });
   $('#newDeckBtn').onclick = () => {
-    clearEditorLocation();
+    clearEditorSnapshot();
     state.deckId = null;
     state.adminTemplate = null;
+    state.composeMode = 'choice';
+    setNewFlowLocation('choice');
     document.documentElement.dataset.view = 'compose';
     showNewDeckChoice();
   };
@@ -711,7 +843,7 @@ async function persist() {
       if (!r.ok) return r;
       state.deckId = r.id ?? state.deckId;
       state.dirty = deckRevision !== revision;
-      updateEditorLocation();
+      updateEditorLocation({ replace: true });
       saveEditorSnapshot();
     } while (state.dirty);
     return r;
@@ -962,8 +1094,10 @@ async function boot() {
     $('#brandHome').href = '/';
     document.documentElement.dataset.auth = 'out';
     document.documentElement.dataset.view = 'compose';
-    const restored = await restoreEditorFromLocation();
-    if (!restored) showNewDeckChoice();
+    const restoredEditor = await restoreEditorFromLocation();
+    const restoredAdmin = restoredEditor ? false : await restoreAdminFromLocation();
+    const restoredNewFlow = restoredEditor || restoredAdmin ? false : await restoreNewFlowFromLocation();
+    if (!restoredEditor && !restoredAdmin && !restoredNewFlow) showNewDeckChoice();
     return;
   }
   sb.auth.onAuthStateChange((event, session) => handleAuthEvent(event, session));
@@ -982,7 +1116,7 @@ async function boot() {
       : callback.get('error_description')?.replace(/\+/g, ' ') || 'This authentication link could not be verified.';
     setAuthMode('reset');
     setAuthMessage(message, { error: true });
-    history.replaceState(null, '', `${location.pathname}${location.search}`);
+    window.history.replaceState(null, '', `${location.pathname}${location.search}`);
   }
 }
 
@@ -1070,11 +1204,7 @@ function wireAdmin() {
     await openAdminPage('templates');
   };
   $('#adminBackBtn').onclick = async () => {
-    const url = new URL(location.href);
-    url.search = '';
-    window.history.pushState(null, '', url);
-    document.documentElement.dataset.view = 'dashboard';
-    await loadDashboard();
+    await restorePreviousView(state.adminReturn, 'dashboard');
   };
   $$('.admin-nav [data-admin-page]').forEach((button) => {
     button.onclick = () => openAdminPage(button.dataset.adminPage);
@@ -1082,17 +1212,27 @@ function wireAdmin() {
   $('#adminCreateBtn').onclick = () => {
     if (state.admin.page === 'templates' && state.deck) renderAdminTemplateDraftForm();
     else if (state.admin.page === 'templates') {
-      clearEditorLocation();
-      document.documentElement.dataset.view = 'dashboard';
       $('#newDeckBtn').click();
     }
     else selectAdminStyle(null);
   };
   window.addEventListener('popstate', async () => {
-    const adminPage = new URLSearchParams(location.search).get('admin');
-    if (adminPage && state.isAdmin) return openAdminPage(adminPage, { navigate: false });
     if (await restoreEditorFromLocation()) return;
-    if (state.user) document.documentElement.dataset.view = 'dashboard';
+    if (await restoreAdminFromLocation()) return;
+    if (await restoreNewFlowFromLocation()) return;
+    if (document.documentElement.dataset.view === 'editor') {
+      await restorePreviousView(state.editorReturn, state.user ? 'dashboard' : 'compose');
+      return;
+    }
+    state.admin.renderId += 1;
+    state.admin.previewObserver?.disconnect();
+    state.admin.previewObserver = null;
+    if (state.user) {
+      state.deckId = null;
+      state.adminTemplate = null;
+      document.documentElement.dataset.view = 'dashboard';
+      await loadDashboard();
+    } else document.documentElement.dataset.view = 'auth';
   });
 }
 
@@ -1101,12 +1241,19 @@ async function openAdminPage(page, { navigate = true } = {}) {
     showAdminMessage('Admin access is required to manage these libraries.', true);
     return false;
   }
+  if (document.documentElement.dataset.view !== 'admin') {
+    const view = document.documentElement.dataset.view;
+    state.adminReturn = {
+      view: ['dashboard', 'compose', 'editor'].includes(view) ? view : (state.user ? 'dashboard' : 'auth'),
+      composeMode: state.composeMode,
+      page: state.admin.page,
+    };
+  }
   state.admin.page = page;
   if (navigate) {
     const url = new URL(location.href);
-    url.pathname = '/studio';
+    url.pathname = `/studio/admin/${page}`;
     url.search = '';
-    url.searchParams.set('admin', page);
     window.history.pushState(null, '', url);
   }
   document.documentElement.dataset.view = 'admin';
@@ -1123,6 +1270,55 @@ async function openAdminPage(page, { navigate = true } = {}) {
     ? (state.deck ? 'Save current deck' : 'New from studio')
     : 'New style';
   return page === 'templates' ? renderAdminTemplates() : renderAdminStyles();
+}
+
+async function restorePreviousView(destination, fallback) {
+  state.admin.renderId += 1;
+  state.admin.previewObserver?.disconnect();
+  state.admin.previewObserver = null;
+  const target = destination ?? { view: fallback };
+  if (target.view === 'editor' && state.deck) {
+    updateEditorLocation({ replace: true });
+    document.documentElement.dataset.view = 'editor';
+    return;
+  }
+
+  clearEditorLocation({ replace: true });
+  state.deckId = null;
+  state.adminTemplate = null;
+
+  if (target.view === 'compose') {
+    const mode = ['choice', 'composer', 'gallery'].includes(target.composeMode)
+      ? target.composeMode
+      : 'choice';
+    state.composeMode = mode;
+    setNewFlowLocation(mode === 'gallery' ? 'gallery' : mode === 'composer' ? 'compose' : 'choice', { replace: true });
+    document.documentElement.dataset.view = 'compose';
+    $('#newDeckChoice').hidden = mode !== 'choice';
+    $('#composer').hidden = mode !== 'composer';
+    $('#gallery').hidden = mode !== 'gallery';
+    if (mode === 'gallery') await loadGallery();
+    return;
+  }
+
+  if (target.view === 'admin' && state.isAdmin) {
+    const page = ['templates', 'styles'].includes(target.page) ? target.page : 'templates';
+    const url = new URL(location.href);
+    url.pathname = `/studio/admin/${page}`;
+    url.search = '';
+    window.history.replaceState(window.history.state, '', url);
+    document.documentElement.dataset.view = 'admin';
+    await openAdminPage(page, { navigate: false });
+    return;
+  }
+
+  if (target.view === 'auth' || (!state.user && fallback === 'auth')) {
+    document.documentElement.dataset.view = 'auth';
+    return;
+  }
+
+  document.documentElement.dataset.view = 'dashboard';
+  if (state.user) await loadDashboard();
 }
 
 function statusBadge(status, hasDraft = false) {
@@ -1142,29 +1338,44 @@ function adminAction(label, action, { primary = false } = {}) {
 }
 
 async function renderAdminTemplates() {
+  const renderId = ++state.admin.renderId;
+  state.admin.previewObserver?.disconnect();
+  state.admin.previewObserver = null;
   const host = $('#adminContent');
+  host.setAttribute('aria-busy', 'true');
   host.innerHTML = '<p class="admin-empty">Loading templates…</p>';
   const result = await api('/api/admin/templates');
+  if (renderId !== state.admin.renderId || state.admin.page !== 'templates') return false;
   if (!result.ok) {
     host.innerHTML = '';
+    host.setAttribute('aria-busy', 'false');
     showAdminMessage(`Could not load templates: ${result.message}`, true);
     return false;
   }
   state.admin.templates = result.templates ?? [];
   host.innerHTML = '';
+  host.setAttribute('aria-busy', 'false');
 
   const toolbar = document.createElement('div');
   toolbar.className = 'admin-toolbar';
   const filters = document.createElement('div');
   filters.className = 'admin-filters';
+  filters.setAttribute('role', 'group');
+  filters.setAttribute('aria-label', 'Filter templates');
   for (const [value, text] of [
     ['all', 'All'], ['builtin', 'Built-in'], ['published', 'Published'], ['draft', 'Drafts'], ['archived', 'Archived'],
   ]) {
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = text;
-    button.setAttribute('aria-pressed', String(state.admin.filter === value));
-    button.onclick = () => { state.admin.filter = value; renderAdminTemplates(); };
+    button.setAttribute('aria-pressed', String(state.admin.templateFilter === value));
+    button.onclick = () => {
+      state.admin.templateFilter = value;
+      for (const filterButton of filters.children) {
+        filterButton.setAttribute('aria-pressed', String(filterButton === button));
+      }
+      fillAdminTemplateRows(list);
+    };
     filters.appendChild(button);
   }
   const search = document.createElement('input');
@@ -1192,7 +1403,7 @@ function fillAdminTemplateRows(list) {
   list.innerHTML = '';
   const query = state.admin.query.trim().toLowerCase();
   const items = state.admin.templates.filter((item) => {
-    const filter = state.admin.filter;
+    const filter = state.admin.templateFilter;
     const matchesFilter = filter === 'all'
       || (filter === 'builtin' ? item.origin === 'builtin'
         : filter === 'draft' ? item.status === 'draft' || Boolean(item.draft)
@@ -1217,6 +1428,7 @@ function fillAdminTemplateRows(list) {
     frame.src = '/templates/carousel.html';
     frame.title = `Preview: ${effective.name}`;
     frame.tabIndex = -1;
+    frame.loading = 'lazy';
     preview.appendChild(frame);
     frame.addEventListener('load', () => {
       scaleFrame(preview, frame, preview.clientWidth);
@@ -1279,6 +1491,7 @@ async function updateAdminTemplate(item, status) {
     deck: effective.deck,
   }, { method: 'PUT' });
   if (!result.ok) return showAdminMessage(`Could not update template: ${result.message}`, true);
+  if (state.admin.page !== 'templates') return;
   showAdminMessage(status === 'published' ? 'Template published for new users.' : 'Template archived from new-deck choices.');
   await renderAdminTemplates();
 }
@@ -1330,7 +1543,7 @@ function renderAdminTemplateDraftForm(host = $('#adminContent'), append = false)
     });
     save.disabled = false;
     if (!result.ok) return showAdminMessage(`Could not save template: ${result.message}`, true);
-    state.admin.filter = 'draft';
+    state.admin.templateFilter = 'draft';
     showAdminMessage('Template saved as a draft.');
     await renderAdminTemplates();
   };
@@ -1339,88 +1552,109 @@ function renderAdminTemplateDraftForm(host = $('#adminContent'), append = false)
 }
 
 async function renderAdminStyles() {
+  const renderId = ++state.admin.renderId;
+  state.admin.previewObserver?.disconnect();
+  state.admin.previewObserver = null;
   const host = $('#adminContent');
+  host.setAttribute('aria-busy', 'true');
   host.innerHTML = '<p class="admin-empty">Loading styles…</p>';
   const [stylesResult, templatesResult] = await Promise.all([
     api('/api/admin/styles'),
     api('/api/admin/templates'),
   ]);
+  if (renderId !== state.admin.renderId || state.admin.page !== 'styles') return false;
   if (!stylesResult.ok || !templatesResult.ok) {
     host.innerHTML = '';
+    host.setAttribute('aria-busy', 'false');
     showAdminMessage(`Could not load the style workbench: ${stylesResult.message || templatesResult.message}`, true);
     return false;
   }
   state.admin.styles = stylesResult.styles ?? [];
   state.admin.templates = templatesResult.templates ?? [];
-  const defaults = await api('/api/defaults');
-  if (!defaults.ok) {
-    host.innerHTML = '';
-    showAdminMessage(`Could not load a preview deck: ${defaults.message}`, true);
-    return false;
+  const firstPublishedTemplate = state.admin.templates.find((item) =>
+    item.status === 'published' && item.origin === 'builtin')
+    ?? state.admin.templates.find((item) => item.status === 'published');
+  state.admin.sampleDeck = firstPublishedTemplate?.deck ?? null;
+  if (!state.admin.sampleDeck) {
+    const defaults = await api('/api/defaults');
+    if (renderId !== state.admin.renderId || state.admin.page !== 'styles') return false;
+    if (!defaults.ok) {
+      host.innerHTML = '';
+      host.setAttribute('aria-busy', 'false');
+      showAdminMessage(`Could not load a preview deck: ${defaults.message}`, true);
+      return false;
+    }
+    state.admin.sampleDeck = defaults.decks?.[0] ?? null;
   }
-  state.admin.sampleDeck = defaults.decks?.[0] ?? null;
   host.innerHTML = '';
+  host.setAttribute('aria-busy', 'false');
 
   const toolbar = document.createElement('div');
   toolbar.className = 'admin-toolbar';
   const filters = document.createElement('div');
   filters.className = 'admin-filters';
+  filters.setAttribute('role', 'group');
+  filters.setAttribute('aria-label', 'Filter styles');
   for (const [value, text] of [['all', 'All'], ['published', 'Published'], ['draft', 'Drafts'], ['archived', 'Archived']]) {
     const button = document.createElement('button');
     button.type = 'button';
     button.textContent = text;
-    button.setAttribute('aria-pressed', String(state.admin.filter === value));
-    button.onclick = () => { state.admin.filter = value; renderAdminStyles(); };
+    button.setAttribute('aria-pressed', String(state.admin.styleFilter === value));
+    button.onclick = () => {
+      state.admin.styleFilter = value;
+      for (const filterButton of filters.children) {
+        filterButton.setAttribute('aria-pressed', String(filterButton === button));
+      }
+      renderAdminStyleRows(rows);
+    };
     filters.appendChild(button);
   }
-  toolbar.appendChild(filters);
+  const search = document.createElement('input');
+  search.type = 'search';
+  search.className = 'admin-search';
+  search.placeholder = 'Find a style';
+  search.setAttribute('aria-label', 'Search styles');
+  search.value = state.admin.styleQuery;
+  search.oninput = () => {
+    state.admin.styleQuery = search.value;
+    renderAdminStyleRows(rows);
+  };
+  toolbar.append(filters, search);
   host.appendChild(toolbar);
 
   const layout = document.createElement('div');
   layout.className = 'admin-style-layout';
-  const list = document.createElement('div');
+  const list = document.createElement('section');
   list.className = 'admin-style-list';
+  list.setAttribute('aria-labelledby', 'adminStyleLibraryTitle');
+  const listHead = document.createElement('div');
+  listHead.className = 'admin-style-list-head';
   const listTitle = document.createElement('h2');
+  listTitle.id = 'adminStyleLibraryTitle';
   listTitle.textContent = 'Style library';
-  list.appendChild(listTitle);
-  for (const style of state.admin.styles.filter((item) => {
-    if (state.admin.filter === 'all') return true;
-    if (item.is_system) return state.admin.filter === 'published';
-    if (state.admin.filter === 'draft') return item.status === 'draft' || Boolean(item.draft);
-    return item.status === state.admin.filter;
-  })) {
-    const row = document.createElement('div');
-    row.className = 'admin-style-row';
-    const select = document.createElement('button');
-    select.type = 'button';
-    select.className = 'style-library-item';
-    select.setAttribute('aria-pressed', String(state.admin.selectedStyle?.id === style.id));
-    select.innerHTML = `<span class="style-swatch" aria-hidden="true"></span><span class="style-copy"><strong></strong><small></small></span>`;
-    const copy = $('.style-copy', select);
-    $('strong', copy).textContent = style.name;
-    $('small', copy).textContent = style.is_system ? 'Built-in · read-only' : `${style.status}${style.draft ? ' · changes saved as draft' : ''}`;
-    const settings = style.draft?.settings ?? style.settings ?? {};
-    $('.style-swatch', select).style.setProperty('--style-bg', settings.background_hex || '#101a33');
-    $('.style-swatch', select).style.setProperty('--style-accent', settings.accent_hex || '#d9a23b');
-    $('.style-swatch', select).style.setProperty('--style-fg', settings.foreground_hex || '#f0e7d4');
-    select.onclick = () => selectAdminStyle(style);
-    row.appendChild(select);
-    if (style.is_system) row.appendChild(adminAction('Duplicate', () => selectAdminStyle(style, { duplicate: true })));
-    else row.appendChild(adminAction(
-      style.status === 'archived' ? 'Restore' : 'Archive',
-      () => changeAdminStyleStatus(style, style.status === 'archived' ? 'published' : 'archived'),
-    ));
-    list.appendChild(row);
-  }
+  const listCount = document.createElement('span');
+  listCount.className = 'admin-style-count';
+  listCount.textContent = String(state.admin.styles.length);
+  listHead.append(listTitle, listCount);
+  list.appendChild(listHead);
+  const rows = document.createElement('div');
+  rows.className = 'admin-style-rows';
+  list.appendChild(rows);
 
   const workbench = document.createElement('div');
   workbench.className = 'admin-style-workbench';
   workbench.innerHTML = `
-    <div class="admin-style-preview">
+    <section class="admin-style-preview" aria-label="Live style preview">
       <div class="admin-style-preview-frame"><iframe id="adminStylePreview" src="/templates/carousel.html" title="Live style preview" scrolling="no"></iframe></div>
       <label class="admin-form-wide">Preview on a template<select id="adminStyleSample"></select></label>
-    </div>
-    <form class="admin-style-form" id="adminStyleForm"></form>
+    </section>
+    <section class="admin-style-editor" aria-labelledby="adminStyleFormTitle">
+      <header class="admin-style-editor-head">
+        <div><h2 id="adminStyleFormTitle">New style</h2><p id="adminStyleFormHint">Set the look once; use it across future decks.</p></div>
+        <span class="admin-style-editor-state" id="adminStyleFormState">Unsaved</span>
+      </header>
+      <form class="admin-style-form" id="adminStyleForm"></form>
+    </section>
   `;
   layout.append(list, workbench);
   host.appendChild(layout);
@@ -1452,13 +1686,69 @@ async function renderAdminStyles() {
     scaleFrame(wrapper, frame, wrapper.clientWidth);
     refreshAdminStylePreview();
   }, { once: true });
-  new ResizeObserver(() => {
+  state.admin.previewObserver = new ResizeObserver(() => {
     const wrapper = $('.admin-style-preview-frame', workbench);
     scaleFrame(wrapper, frame, wrapper.clientWidth);
-  }).observe($('.admin-style-preview-frame', workbench));
+  });
+  state.admin.previewObserver.observe($('.admin-style-preview-frame', workbench));
+  renderAdminStyleRows(rows);
   if (state.admin.selectedStyle) fillAdminStyleForm(state.admin.selectedStyle);
   else selectAdminStyle(null);
   return true;
+}
+
+function renderAdminStyleRows(host) {
+  host.innerHTML = '';
+  const query = state.admin.styleQuery.trim().toLowerCase();
+  const styles = state.admin.styles.filter((item) => {
+    const matchesFilter = state.admin.styleFilter === 'all'
+      || (item.is_system ? state.admin.styleFilter === 'published'
+        : state.admin.styleFilter === 'draft' ? item.status === 'draft' || Boolean(item.draft)
+          : item.status === state.admin.styleFilter);
+    return matchesFilter && `${item.name} ${item.slug ?? ''} ${item.description ?? ''}`.toLowerCase().includes(query);
+  });
+  if (!styles.length) {
+    const empty = document.createElement('p');
+    empty.className = 'admin-empty admin-style-empty';
+    empty.textContent = query ? 'No styles match your search.' : 'No styles in this view yet.';
+    host.appendChild(empty);
+    return;
+  }
+
+  for (const style of styles) {
+    const row = document.createElement('div');
+    row.className = 'admin-style-row';
+    const select = document.createElement('button');
+    select.type = 'button';
+    select.className = 'style-library-item';
+    select.dataset.styleId = style.id;
+    select.setAttribute('aria-pressed', String(state.admin.selectedStyle?.id === style.id));
+    select.innerHTML = `<span class="style-swatch" aria-hidden="true"></span><span class="style-copy"><strong></strong><small></small></span>`;
+    const copy = $('.style-copy', select);
+    $('strong', copy).textContent = style.name;
+    $('small', copy).textContent = style.is_system
+      ? 'Built in · read only'
+      : `${style.status}${style.draft ? ' · draft changes' : ''}`;
+    const settings = {
+      ...(style.is_system ? builtinStyleSettings(style) : {}),
+      ...(style.settings ?? {}),
+      ...(style.draft?.settings ?? {}),
+    };
+    $('.style-swatch', select).style.setProperty('--style-bg', settings.background_hex || '#101a33');
+    $('.style-swatch', select).style.setProperty('--style-accent', settings.accent_hex || '#d9a23b');
+    $('.style-swatch', select).style.setProperty('--style-fg', settings.foreground_hex || '#f0e7d4');
+    select.onclick = () => selectAdminStyle(style);
+    row.appendChild(select);
+    if (style.is_system) {
+      row.appendChild(adminAction('Duplicate', () => selectAdminStyle(style, { duplicate: true })));
+    } else {
+      row.appendChild(adminAction(
+        style.status === 'archived' ? 'Restore' : 'Archive',
+        () => changeAdminStyleStatus(style, style.status === 'archived' ? 'published' : 'archived'),
+      ));
+    }
+    host.appendChild(row);
+  }
 }
 
 function builtinStyleSettings(style) {
@@ -1480,12 +1770,27 @@ function selectAdminStyle(style, { duplicate = false } = {}) {
   const form = $('#adminStyleForm');
   if (!form) return;
   state.admin.selectedStyle = duplicate ? null : style;
+  $$('.style-library-item', $('#adminContent')).forEach((button) => {
+    button.setAttribute('aria-pressed', String(button.dataset.styleId === state.admin.selectedStyle?.id));
+  });
   fillAdminStyleForm(style, duplicate);
 }
 
 function fillAdminStyleForm(style, duplicate = false) {
   const form = $('#adminStyleForm');
   if (!form) return;
+  const title = $('#adminStyleFormTitle');
+  const hint = $('#adminStyleFormHint');
+  const editorState = $('#adminStyleFormState');
+  if (title) title.textContent = duplicate ? 'Duplicate style' : style?.name || 'New style';
+  if (hint) hint.textContent = style?.is_system && !duplicate
+    ? 'Built-in styles are read only. Duplicate one to make changes.'
+    : style?.status === 'published'
+      ? 'Changes stay in draft until you publish them.'
+      : 'Set the look once; use it across future decks.';
+  if (editorState) editorState.textContent = style?.is_system && !duplicate
+    ? 'Built in'
+    : style?.draft ? 'Draft changes' : style?.status || 'Unsaved';
   const sourceSettings = style?.draft?.settings ?? style?.settings ?? {};
   const settings = style?.is_system ? builtinStyleSettings(style) : sourceSettings;
   const initial = {
@@ -1569,8 +1874,12 @@ function fillAdminStyleForm(style, duplicate = false) {
   };
   draftButton.onclick = () => saveAdminStyle(form, 'draft', draftButton);
   archiveButton.onclick = () => saveAdminStyle(form, 'archived', archiveButton);
-  form.oninput = refreshAdminStylePreview;
-  form.onchange = refreshAdminStylePreview;
+  const markStyleEdited = () => {
+    if (editorState && !locked) editorState.textContent = 'Unsaved changes';
+    refreshAdminStylePreview();
+  };
+  form.oninput = markStyleEdited;
+  form.onchange = markStyleEdited;
   refreshAdminStylePreview();
 }
 
@@ -1606,9 +1915,13 @@ async function saveAdminStyle(form, status, button) {
     ? await api(`/api/admin/styles/${encodeURIComponent(selected.id)}`, style, { method: 'PUT' })
     : await api('/api/admin/styles', style);
   button.disabled = false;
-  if (!result.ok) return showAdminMessage(`Could not save style: ${result.message}`, true);
+  if (!result.ok) {
+    if (state.admin.page === 'styles') showAdminMessage(`Could not save style: ${result.message}`, true);
+    return;
+  }
+  if (state.admin.page !== 'styles') return;
   state.admin.selectedStyle = result.style;
-  state.admin.filter = status === 'archived' ? 'archived' : status === 'draft' ? 'draft' : 'published';
+  state.admin.styleFilter = status === 'archived' ? 'archived' : status === 'draft' ? 'draft' : 'published';
   showAdminMessage(status === 'published'
     ? 'Style published for new uses.'
     : status === 'archived' ? 'Style archived from new uses.' : 'Style changes saved as a draft.');
@@ -1625,9 +1938,13 @@ async function changeAdminStyleStatus(style, status) {
     settings: source.settings ?? {},
   };
   const result = await api(`/api/admin/styles/${encodeURIComponent(style.id)}`, payload, { method: 'PUT' });
-  if (!result.ok) return showAdminMessage(`Could not update style: ${result.message}`, true);
+  if (!result.ok) {
+    if (state.admin.page === 'styles') showAdminMessage(`Could not update style: ${result.message}`, true);
+    return;
+  }
+  if (state.admin.page !== 'styles') return;
   state.admin.selectedStyle = result.style;
-  state.admin.filter = status;
+  state.admin.styleFilter = status;
   showAdminMessage(status === 'published' ? 'Style restored for new uses.' : 'Style archived from new uses.');
   await renderAdminStyles();
 }
@@ -1681,6 +1998,7 @@ function showNewDeckChoice() {
   const composer = $('#composer');
   const gallery = $('#gallery');
   if (!choice || !composer || !gallery) return;
+  state.composeMode = 'choice';
   choice.hidden = false;
   composer.hidden = true;
   gallery.hidden = true;
@@ -1693,11 +2011,15 @@ function beginNewDeckChoice(mode) {
   if (!choice || !composer || !gallery) return;
   choice.hidden = true;
   if (mode === 'template') {
+    state.composeMode = 'gallery';
+    setNewFlowLocation('gallery');
     composer.hidden = true;
     gallery.hidden = false;
     loadGallery();
     return;
   }
+  state.composeMode = 'composer';
+  setNewFlowLocation('compose');
   composer.hidden = false;
   gallery.hidden = true;
   $('#sourceText').focus();
@@ -1708,6 +2030,8 @@ function wireCompose() {
     b.onclick = () => beginNewDeckChoice(b.dataset.startMode);
   });
   $('#newDeckBack').onclick = async () => {
+    clearEditorSnapshot();
+    window.history.pushState(window.history.state, '', '/studio');
     if (state.user) {
       document.documentElement.dataset.view = 'dashboard';
       await loadDashboard();
@@ -1898,10 +2222,48 @@ async function generate() {
 
 // ---------------------------------------------------------------- gallery (B)
 async function loadGallery() {
-  const r = await api('/api/templates');
   const host = $('#gallery');
   host.innerHTML = '';
-  if (!r.ok) return;
+  host.setAttribute('aria-busy', 'true');
+
+  const notice = (message, { error = false, retry = false } = {}) => {
+    const content = document.createElement('p');
+    content.className = 'gallery-notice';
+    content.setAttribute('role', error ? 'alert' : 'status');
+    content.textContent = message;
+    host.appendChild(content);
+
+    if (retry) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn-ghost';
+      button.textContent = 'Try again';
+      button.onclick = loadGallery;
+      host.appendChild(button);
+    }
+  };
+
+  notice('Loading templates…');
+  let r;
+  try {
+    r = await api('/api/templates');
+  } catch (error) {
+    host.innerHTML = '';
+    host.removeAttribute('aria-busy');
+    notice(`Could not load templates: ${error.message}`, { error: true, retry: true });
+    return;
+  }
+
+  host.innerHTML = '';
+  host.removeAttribute('aria-busy');
+  if (!r.ok) {
+    notice(`Could not load templates: ${r.message}`, { error: true, retry: true });
+    return;
+  }
+  if (!Array.isArray(r.decks) || r.decks.length === 0) {
+    notice('No templates are available right now.');
+    return;
+  }
 
   for (const deck of r.decks) {
     const card = document.createElement('button');
@@ -1942,9 +2304,17 @@ async function openEditor(deck, info = {}) {
   state.index = Number.isInteger(info.index) ? info.index : 0;
   state.deckId = info.deckId ?? null;
   state.adminTemplate = info.templateAdmin ?? null;
+  const currentView = document.documentElement.dataset.view;
+  state.editorReturn = info.returnTo ?? {
+    view: ['dashboard', 'compose', 'admin'].includes(currentView)
+      ? currentView
+      : (state.user ? 'dashboard' : 'compose'),
+    composeMode: state.composeMode,
+    page: state.admin.page,
+  };
   state.dirty = false;
   document.documentElement.dataset.view = 'editor';
-  updateEditorLocation();
+  updateEditorLocation({ replace: Boolean(info.replaceLocation) });
 
   // A new deck inherits the default brand; a saved one never does. Re-applying it
   // on open would resurrect a footer the user deliberately cleared three edits ago.
@@ -1989,16 +2359,8 @@ function wireEditor() {
         return;
       }
     }
-    const editingTemplate = Boolean(state.adminTemplate);
-    clearEditorLocation();
-    state.deckId = null;
-    state.adminTemplate = null;
-    if (editingTemplate && state.isAdmin) {
-      await openAdminPage('templates');
-      return;
-    }
-    document.documentElement.dataset.view = state.user ? 'dashboard' : 'compose';
-    if (state.user) loadDashboard();
+    await restorePreviousView(state.editorReturn, state.user ? 'dashboard' : 'compose');
+    back.disabled = false;
   };
   $('#prevSlide').onclick = () => selectSlide(state.index - 1);
   $('#nextSlide').onclick = () => selectSlide(state.index + 1);
@@ -2912,6 +3274,68 @@ function buildBrandTab() {
     host.appendChild(wrap);
   }
 
+  const logoField = document.createElement('div');
+  logoField.className = 'brand-logo-field';
+  const logoTitle = document.createElement('span');
+  logoTitle.className = 'brand-logo-label';
+  logoTitle.textContent = 'Logo in footer circle';
+  logoField.appendChild(logoTitle);
+
+  const logoRow = document.createElement('div');
+  logoRow.className = 'brand-logo-row';
+  const logoPreview = document.createElement('div');
+  logoPreview.className = 'brand-logo-preview';
+  logoPreview.setAttribute('aria-hidden', 'true');
+  if (brand.logo_url) {
+    const image = document.createElement('img');
+    image.src = brand.logo_url;
+    image.alt = '';
+    logoPreview.appendChild(image);
+  } else {
+    logoPreview.textContent = (brand.name || brand.handle || 'V').replace(/^@/, '').charAt(0).toUpperCase();
+  }
+  logoRow.appendChild(logoPreview);
+
+  const uploadLabel = document.createElement('label');
+  uploadLabel.className = 'btn-ghost sm brand-logo-upload';
+  uploadLabel.textContent = brand.logo_url ? 'Replace logo' : 'Upload logo';
+  const logoInput = document.createElement('input');
+  logoInput.id = 'b-logo';
+  logoInput.type = 'file';
+  logoInput.accept = 'image/png,image/jpeg,image/webp';
+  logoInput.setAttribute('aria-label', 'Upload a PNG, JPEG, or WebP brand logo');
+  logoInput.onchange = async () => {
+    const file = logoInput.files?.[0];
+    if (file) await uploadBrandLogo(file, logoStatus, logoInput);
+  };
+  uploadLabel.appendChild(logoInput);
+  logoRow.appendChild(uploadLabel);
+
+  const removeLogo = document.createElement('button');
+  removeLogo.type = 'button';
+  removeLogo.className = 'linkbtn';
+  removeLogo.textContent = 'Remove';
+  removeLogo.hidden = !brand.logo_url;
+  removeLogo.onclick = () => {
+    delete state.deck.brand.logo_url;
+    if (!Object.keys(state.deck.brand).length) delete state.deck.brand;
+    buildBrandTab();
+    refreshPreview();
+    refreshThumb(state.index);
+    revalidate();
+  };
+  logoRow.appendChild(removeLogo);
+  logoField.appendChild(logoRow);
+
+  const logoStatus = document.createElement('p');
+  logoStatus.className = 'brand-logo-status';
+  logoStatus.setAttribute('role', 'status');
+  logoStatus.textContent = brand.logo_url
+    ? 'Logo added. It will be cropped to fit the circle.'
+    : 'PNG, JPEG, or WebP · up to 2 MB. Large images are optimized for faster loading.';
+  logoField.appendChild(logoStatus);
+  host.appendChild(logoField);
+
   const lib = document.createElement('div');
   lib.className = 'brandlib';
   host.appendChild(lib);
@@ -2923,6 +3347,108 @@ function buildBrandTab() {
     ? 'The deck always carries its own footer — that is what renders. A saved brand is where you copy one from, so the next deck starts with it already filled in.'
     : 'Saved brands need an account. The footer above still renders; it just lives on this deck only.';
   host.appendChild(why);
+}
+
+async function uploadBrandLogo(file, status, input) {
+  const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/webp']);
+  if (!allowedTypes.has(file.type)) {
+    status.textContent = 'Choose a PNG, JPEG, or WebP image.';
+    input.value = '';
+    return;
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    status.textContent = 'Logo files must be 2 MB or smaller.';
+    input.value = '';
+    return;
+  }
+  if (!sb || !state.user) {
+    status.textContent = 'Sign in to upload a saved logo.';
+    input.value = '';
+    return;
+  }
+
+  status.textContent = 'Checking image…';
+  let bitmap;
+  let uploadFile = file;
+  let contentType = file.type;
+  try {
+    bitmap = await createImageBitmap(file);
+    if (bitmap.width > 8192 || bitmap.height > 8192) {
+      status.textContent = 'Logo dimensions must be 8192 pixels or smaller on each side.';
+      input.value = '';
+      return;
+    }
+    const scale = Math.min(1, 512 / Math.max(bitmap.width, bitmap.height));
+    const shouldResize = scale < 1;
+    const shouldCompress = file.size > 128 * 1024;
+    if (shouldResize || shouldCompress) {
+      status.textContent = 'Optimizing logo for faster upload…';
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('Your browser could not prepare this image.');
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const optimized = await new Promise((resolveBlob) => canvas.toBlob(resolveBlob, 'image/webp', 0.86));
+      canvas.width = 0;
+      canvas.height = 0;
+      if (!optimized) throw new Error('Your browser could not optimize this image.');
+      if (shouldResize || optimized.size < file.size) {
+        uploadFile = optimized;
+        contentType = optimized.type;
+      }
+    }
+  } catch (error) {
+    status.textContent = `Could not read this image: ${error.message}`;
+    input.value = '';
+    return;
+  } finally {
+    bitmap?.close();
+  }
+
+  status.textContent = 'Uploading logo…';
+  const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[contentType];
+  const path = `${state.user.id}/${crypto.randomUUID()}.${extension}`;
+  let uploaded;
+  try {
+    uploaded = await sb.storage.from('brand-logos').upload(path, uploadFile, {
+      cacheControl: '31536000',
+      contentType,
+      upsert: false,
+    });
+  } catch (error) {
+    status.textContent = `Logo upload failed: ${error.message}`;
+    input.value = '';
+    return;
+  }
+  if (uploaded.error) {
+    status.textContent = `Logo upload failed: ${uploaded.error.message}`;
+    input.value = '';
+    return;
+  }
+
+  const publicUrl = sb.storage.from('brand-logos').getPublicUrl(uploaded.data.path).data?.publicUrl;
+  let logoUrl;
+  try {
+    const parsed = new URL(publicUrl);
+    const projectOrigin = new URL(state.meta.supabase.url).origin;
+    if (parsed.protocol !== 'https:' || parsed.origin !== projectOrigin) {
+      throw new Error('Storage returned an unexpected logo URL.');
+    }
+    logoUrl = parsed.href;
+  } catch (error) {
+    status.textContent = `Could not use the uploaded logo: ${error.message}`;
+    input.value = '';
+    return;
+  }
+
+  state.deck.brand = state.deck.brand ?? {};
+  state.deck.brand.logo_url = logoUrl;
+  status.textContent = 'Logo uploaded and added to the slide footer.';
+  buildBrandTab();
+  refreshPreview();
+  refreshThumb(state.index);
+  revalidate({ discrete: true });
 }
 
 /** The brand library: saved footers, and the two ways to add one. */
@@ -2966,6 +3492,14 @@ function brandRow(b) {
   const row = document.createElement('div');
   row.className = 'brandrow' + (b.is_default ? ' isdefault' : '');
 
+  if (b.logo_url) {
+    const logo = document.createElement('img');
+    logo.className = 'brandrow-logo';
+    logo.src = b.logo_url;
+    logo.alt = '';
+    logo.loading = 'lazy';
+    row.appendChild(logo);
+  }
   const who = document.createElement('div');
   who.className = 'who';
   const name = document.createElement('b');
@@ -3025,7 +3559,7 @@ function brandFromInputs() {
   const brand = state.deck.brand ?? {};
   const name = (brand.name ?? '').trim();
   const handle = (brand.handle ?? '').trim();
-  if (!name && !handle) return null;
+  if (!name && !handle && !brand.logo_url) return null;
   return { name, handle, logo_url: brand.logo_url ?? null };
 }
 

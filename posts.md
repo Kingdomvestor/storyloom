@@ -697,3 +697,57 @@ Status: draft
 **Images:** the start choice, then the template gallery after selection.
 
 ---
+
+## 2026-10-03 — Four views, real URLs
+Status: draft
+
+> My studio had four views but one URL.
+>
+> Saved decks now live at `/studio/deck/:id`; Templates and Styles have their own admin paths. Refresh serves the same studio shell instead of a 404.
+>
+> The URL picks the view. The server still decides who can use admin APIs.
+
+**Images:** a refreshed editor deep link and the admin Styles URL.
+
+---
+
+## 2026-10-04 — New carousel, real route
+Status: draft
+
+> The new-carousel choice and template gallery used to disappear on refresh.
+>
+> `/studio/new` now carries the flow; an unsaved template preview survives refresh, then its first save replaces the URL with its deck ID.
+>
+> Signed-out deep links return after sign-in. Unknown paths get a real 404.
+
+**Images:** browser recording from `/studio/new?step=template` through first save to `/studio/deck/:id`.
+
+---
+
+## 2026-10-04 — A catalog shouldn't repaint its canvas
+Status: draft
+
+> The Styles workbench reloaded its library and rebuilt the live preview every time I changed a filter.
+>
+> Templates and Styles also shared filter state, so one tab could make the other look empty.
+>
+> Each catalog now keeps its own filters and works from loaded data. The live 1080×1350 preview stays put while I narrow the list; stale responses can't replace the page I'm actually on.
+>
+> I also rebuilt the Styles workspace around its library, preview, and editor, with a layout that fits a phone.
+
+**Images:** the Styles workbench at desktop and phone widths.
+
+---
+
+## 2026-10-05 — A logo that survives the export
+Status: draft
+
+> The footer circle used to show initials only.
+>
+> You can now upload a small PNG, JPEG, or WebP logo to Supabase Storage and see it inside the slide avatar. The shared carousel template waits for it before marking a render ready, so the preview and downloaded slides stay in sync.
+>
+> Uploads are limited to your own storage folder; logos are public so saved decks and exports can render them later. Large images are resized to 512 pixels and converted to WebP when it saves bytes, which cuts the amount the browser has to upload and download.
+
+**Images:** the uploaded logo in the editor preview and an exported slide.
+
+---
