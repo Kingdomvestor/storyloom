@@ -23,12 +23,30 @@ after(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
-test('additional reusable styles fill available columns and wrap responsively', async () => {
+test('style picker renders template previews and wraps responsively', async () => {
   const page = await browser.newPage();
   try {
     await page.setViewport({ width: 1180, height: 900 });
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (url.origin !== base) {
+        request.abort();
+      } else {
+        request.continue();
+      }
+    });
     await page.goto(`${base}/studio`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.querySelectorAll('#stylePicker .stylecard').length === 3);
+    await page.waitForFunction(() => [...document.querySelectorAll('#stylePicker .style-preview')]
+      .every((preview) => preview.dataset.state === 'ready'), { timeout: 15000 });
+    const previewHeadings = await page.$$eval('#stylePicker .style-preview iframe', (frames) =>
+      frames.map((frame) => frame.contentDocument.querySelector('.heading')?.textContent.trim()));
+    assert.deepEqual(previewHeadings, [
+      '5 rules for posts that actually travel',
+      'The draft nobody wanted to write',
+      'Ship a side project in one weekend',
+    ]);
     await page.evaluate(() => {
       document.querySelector('#composer').hidden = false;
       const card = document.querySelector('#stylePicker .stylecard').cloneNode(true);

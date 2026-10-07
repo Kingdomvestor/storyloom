@@ -88,6 +88,9 @@ let passwordRecoveryActive = false;
 let persistPromise = null;
 let deckRevision = 0;
 let editorRestorePromise = null;
+let stylePreviewDecks = null;
+let stylePreviewDecksPromise = null;
+const stylePreviewObservers = new WeakMap();
 
 // ----------------------------------------------------------------- transport
 async function api(path, body, opts = {}) {
@@ -1280,7 +1283,7 @@ function wireAdmin() {
         return;
       }
     }
-    await openAdminPage('templates');
+    await openAdminPage('feedback');
   };
   $('#adminBackBtn').onclick = async () => {
     await restorePreviousView(state.adminReturn, 'dashboard');
@@ -2312,8 +2315,7 @@ function buildStylePicker() {
     const card = document.createElement('button');
     card.className = 'stylecard' + (s === state.compose.style ? ' on' : '');
     card.setAttribute('aria-pressed', String(s === state.compose.style));
-    card.innerHTML =
-      `<div class="sw" data-s="${s}" aria-hidden="true"><i class="eyebrow"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i></div>`;
+    addStylePreview(card, s);
     const nm = document.createElement('span');
     nm.className = 'nm';
     nm.textContent = label(s);
@@ -2324,6 +2326,86 @@ function buildStylePicker() {
     };
     host.appendChild(card);
   }
+  observeStylePreviews(host);
+}
+
+function addStylePreview(card, styleId) {
+  const preview = document.createElement('div');
+  preview.className = 'style-preview';
+  preview.dataset.state = 'loading';
+
+  const message = document.createElement('span');
+  message.className = 'style-preview-message';
+  message.setAttribute('role', 'status');
+  message.setAttribute('aria-live', 'polite');
+  message.textContent = 'Loading preview…';
+
+  const iframe = document.createElement('iframe');
+  iframe.src = '/templates/carousel.html';
+  iframe.title = `${label(styleId)} style preview`;
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.setAttribute('tabindex', '-1');
+  iframe.setAttribute('scrolling', 'no');
+  preview.append(iframe, message);
+  card.appendChild(preview);
+  void renderStylePreview(preview, iframe, styleId);
+}
+
+async function renderStylePreview(preview, iframe, styleId) {
+  try {
+    if (!stylePreviewDecksPromise) {
+      stylePreviewDecksPromise = api('/api/defaults').then((result) => {
+        if (!result.ok) throw new Error(result.message || 'Could not load starter templates.');
+        if (!Array.isArray(result.decks)) throw new Error('The starter templates response was invalid.');
+        stylePreviewDecks = result.decks;
+      }).catch((error) => {
+        stylePreviewDecksPromise = null;
+        throw error;
+      });
+    }
+    await stylePreviewDecksPromise;
+
+    const sample = stylePreviewDecks.find((deck) => deck.style_id === styleId)
+      ?? stylePreviewDecks[0];
+    if (!sample) throw new Error('No starter template is available for preview.');
+    const deck = structuredClone(sample);
+    const style = state.styleLibrary.find((item) => (item.slug || item.id) === styleId);
+    if (style && !style.is_system) {
+      deck.style_id = style.slug || style.settings?.base_style_id || deck.style_id;
+      deck.theme = structuredClone(style.settings || {});
+      delete deck.theme.layout;
+    }
+
+    const frame = await frameApi(iframe);
+    if (!frame) throw new Error('The preview frame did not load.');
+    frame.setDeck(deck);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (iframe.contentDocument?.documentElement.dataset.ready === 'true') {
+        preview.dataset.state = 'ready';
+        $('.style-preview-message', preview).textContent = '';
+        return;
+      }
+      await sleep(40);
+    }
+    throw new Error('The slide did not finish rendering.');
+  } catch (error) {
+    preview.dataset.state = 'error';
+    $('.style-preview-message', preview).textContent = `Preview unavailable: ${error.message}`;
+  }
+}
+
+function observeStylePreviews(host) {
+  stylePreviewObservers.get(host)?.disconnect();
+  const observer = new ResizeObserver((entries) => {
+    for (const { target } of entries) {
+      const iframe = $('iframe', target);
+      if (iframe && target.clientWidth) {
+        scaleFrame(target, iframe, target.clientWidth, { setWidth: false });
+      }
+    }
+  });
+  $$('.style-preview', host).forEach((preview) => observer.observe(preview));
+  stylePreviewObservers.set(host, observer);
 }
 
 // ==================================================================== COMPOSE
@@ -2599,33 +2681,112 @@ async function loadGallery() {
     return;
   }
 
+  const toolbar = document.createElement('div');
+  toolbar.className = 'gallery-toolbar';
+  const search = document.createElement('input');
+  search.type = 'search';
+  search.maxLength = 120;
+  search.placeholder = 'Search templates';
+  search.setAttribute('aria-label', 'Search templates');
+
+  const styleFilter = document.createElement('select');
+  styleFilter.setAttribute('aria-label', 'Filter templates by style');
+  const formatFilter = document.createElement('select');
+  formatFilter.setAttribute('aria-label', 'Filter templates by format');
+  const addFilterOption = (select, value, text) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    select.appendChild(option);
+  };
+  addFilterOption(styleFilter, '', 'All styles');
+  addFilterOption(formatFilter, '', 'All formats');
+
+  for (const [value, text] of [...new Set(r.decks.map((deck) => deck.style_id))]
+    .filter(Boolean)
+    .map((value) => [value, label(value)])
+    .sort((a, b) => a[1].localeCompare(b[1]))) {
+    addFilterOption(styleFilter, value, text);
+  }
+  for (const [value, text] of [...new Set(r.decks.map((deck) => deck.narrative_type))]
+    .filter(Boolean)
+    .map((value) => [value, label(value)])
+    .sort((a, b) => a[1].localeCompare(b[1]))) {
+    addFilterOption(formatFilter, value, text);
+  }
+
+  const summary = document.createElement('p');
+  summary.className = 'gallery-summary';
+  summary.setAttribute('role', 'status');
+  summary.setAttribute('aria-live', 'polite');
+  const grid = document.createElement('div');
+  grid.className = 'gallery-grid';
+  const empty = document.createElement('p');
+  empty.className = 'gallery-notice';
+  empty.setAttribute('role', 'status');
+  empty.textContent = 'No templates match those filters. Try a different search or filter.';
+  empty.hidden = true;
+  toolbar.append(search, styleFilter, formatFilter);
+  host.replaceChildren(toolbar, summary, grid, empty);
+
+  const cards = [];
   for (const deck of r.decks) {
     const card = document.createElement('button');
     card.className = 'gcard';
     card.innerHTML =
-      `<div class="shot"><iframe src="/templates/carousel.html" scrolling="no" tabindex="-1"></iframe></div>` +
+      `<div class="shot"><iframe scrolling="no" tabindex="-1"></iframe></div>` +
       `<div class="meta"><b></b><span></span></div>` +
       `<div class="use">Use this &rarr;</div>`;
     $('.meta b', card).textContent = deck.title;
     $('.meta span', card).textContent =
       `${label(deck.style_id)} · ${deck.slides.length} slides · ${label(deck.narrative_type)}`;
     card.onclick = async () => openEditor(structuredClone(deck), { source: 'template' });
-    host.appendChild(card);
+    grid.appendChild(card);
+    cards.push({
+      card,
+      deck,
+      searchText: [deck.title, deck.style_id, label(deck.style_id),
+        deck.narrative_type, label(deck.narrative_type)].join(' ').toLocaleLowerCase(),
+    });
 
     const shot = $('.shot', card);
     const iframe = $('iframe', card);
     scaleFrame(shot, iframe, shot.clientWidth, { setWidth: false });
-    show(iframe, deck, 0);
+    iframe.loading = 'lazy';
+    iframe.addEventListener('load', () => {
+      if (iframe.contentWindow?.location.pathname === '/templates/carousel.html') {
+        show(iframe, deck, 0);
+      }
+    });
+    iframe.src = '/templates/carousel.html';
   }
+
+  const updateResults = () => {
+    const query = search.value.trim().toLocaleLowerCase();
+    let visible = 0;
+    for (const { card, deck, searchText } of cards) {
+      const matchesQuery = !query || searchText.includes(query);
+      const matchesStyle = !styleFilter.value || deck.style_id === styleFilter.value;
+      const matchesFormat = !formatFilter.value || deck.narrative_type === formatFilter.value;
+      card.hidden = !(matchesQuery && matchesStyle && matchesFormat);
+      if (!card.hidden) visible++;
+    }
+    summary.textContent = `Showing ${visible} of ${cards.length} ${cards.length === 1 ? 'template' : 'templates'}`;
+    empty.hidden = visible > 0;
+  };
+  search.addEventListener('input', updateResults);
+  styleFilter.addEventListener('change', updateResults);
+  formatFilter.addEventListener('change', updateResults);
+  updateResults();
 
   // Card width follows the viewport; the iframe is a fixed 1080, so only the
   // scale factor has to keep up.
   new ResizeObserver(() => {
-    $$('.gcard').forEach((c) => {
+    $$('.gcard', grid).forEach((c) => {
       const s = $('.shot', c);
       scaleFrame(s, $('iframe', c), s.clientWidth, { setWidth: false });
     });
-  }).observe(host);
+  }).observe(grid);
 }
 
 // ===================================================================== EDITOR
@@ -3412,8 +3573,7 @@ function buildStyleTab() {
     const card = document.createElement('button');
     card.className = 'stylecard' + (s === state.deck.style_id ? ' on' : '');
     card.setAttribute('aria-pressed', String(s === state.deck.style_id));
-    card.innerHTML =
-      `<div class="sw" data-s="${s}" aria-hidden="true"><i class="eyebrow"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i></div>`;
+    addStylePreview(card, s);
     const nm = document.createElement('span');
     nm.className = 'nm';
     nm.textContent = label(s);
@@ -3435,6 +3595,7 @@ function buildStyleTab() {
     grid.appendChild(card);
   }
   host.appendChild(grid);
+  observeStylePreviews(host);
 
   const compositionHead = document.createElement('div');
   compositionHead.className = 'subhead';

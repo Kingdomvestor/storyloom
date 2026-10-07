@@ -382,6 +382,7 @@ textarea:focus, input:focus {
   transition: border-color .14s, transform .14s, background .14s;
 }
 .stylecard:hover { transform: translateY(-2px); border-color: var(--hover-line); }
+.stylecard:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .stylecard.on { border-color: var(--gold); background: var(--gold-soft); }
 .stylecard .nm {
   display: block; margin-top: 7px; padding: 0 2px;
@@ -445,39 +446,23 @@ textarea:focus, input:focus {
   min-height: 38px; padding: 4px; width: 100%;
 }
 
-/* miniature of each skin — not a screenshot, a token sample */
-.sw {
-  position: relative; aspect-ratio: 4 / 5; border-radius: 8px; overflow: hidden;
-  padding: 13px 12px; display: flex; flex-direction: column; justify-content: center; gap: 5px;
+/* ------------------------------------------------------------ style previews */
+.style-preview {
+  position: relative; width: 100%; aspect-ratio: 4 / 5; overflow: hidden;
+  border: 1px solid var(--line-soft); border-radius: 8px; background: #101A33;
 }
-.sw i { display: block; border-radius: 2px; }
-.sw .eyebrow { width: 36%; height: 3px; margin-bottom: 5px; }
-.sw .l1 { width: 88%; height: 7px; }
-.sw .l2 { width: 58%; height: 7px; }
-.sw .l3 { width: 72%; height: 3px; margin-top: 7px; opacity: .45; }
-
-.sw[data-s="signature-african"] {
-  background:
-    radial-gradient(120% 90% at 85% -10%, rgba(15, 107, 97, .3), transparent 60%),
-    radial-gradient(90% 70% at -10% 110%, rgba(189, 74, 46, .26), transparent 55%),
-    #101A33;
+.style-preview iframe {
+  display: block; width: 1080px; height: 1350px; border: 0;
+  transform-origin: top left; opacity: 0; pointer-events: none; transition: opacity .16s;
 }
-.sw[data-s="signature-african"]::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
-  background: repeating-linear-gradient(180deg, #D9A23B 0 11px, #0F6B61 11px 22px, #BD4A2E 22px 33px, #F0E7D4 33px 44px);
+.style-preview[data-state="ready"] iframe { opacity: 1; }
+.style-preview-message {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  padding: 12px; color: var(--muted); font-size: 11px; line-height: 1.45;
+  text-align: center; overflow-wrap: anywhere;
 }
-.sw[data-s="signature-african"] .eyebrow, .sw[data-s="signature-african"] .l2 { background: #D9A23B; }
-.sw[data-s="signature-african"] .l1, .sw[data-s="signature-african"] .l3 { background: #F0E7D4; }
-
-.sw[data-s="editorial-clean"] { background: #F7F4EC; }
-.sw[data-s="editorial-clean"] .eyebrow, .sw[data-s="editorial-clean"] .l2 { background: #BD4A2E; }
-.sw[data-s="editorial-clean"] .l1, .sw[data-s="editorial-clean"] .l3 { background: #1B1A17; }
-
-.sw[data-s="mono-terminal"] {
-  background: linear-gradient(180deg, rgba(61, 220, 132, .1), transparent 35%), #0A0C0B;
-}
-.sw[data-s="mono-terminal"] .eyebrow, .sw[data-s="mono-terminal"] .l2 { background: #3DDC84; }
-.sw[data-s="mono-terminal"] .l1, .sw[data-s="mono-terminal"] .l3 { background: #E6EDE9; }
+.style-preview[data-state="ready"] .style-preview-message { display: none; }
+.style-preview[data-state="error"] .style-preview-message { color: #FF9EA1; }
 
 /* ------------------------------------------------------------------ extra */
 .extra { margin-top: 16px; }
@@ -571,8 +556,35 @@ textarea:focus, input:focus {
 }
 
 /* --------------------------------------------------------------- gallery */
-.gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-.gallery-notice { grid-column: 1 / -1; margin: 0; color: var(--muted); }
+.gallery {
+  display: block;
+}
+.gallery-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(130px, 190px));
+  gap: 9px;
+  margin-bottom: 9px;
+}
+.gallery-toolbar input,
+.gallery-toolbar select {
+  width: 100%; min-width: 0; min-height: 40px; padding: 8px 11px;
+  border: 1px solid var(--line-soft); border-radius: 8px;
+  background: var(--panel); color: var(--text); font: inherit; font-size: 12px;
+}
+.gallery-toolbar input:focus-visible,
+.gallery-toolbar select:focus-visible {
+  outline: 2px solid var(--gold); outline-offset: 2px;
+}
+.gallery-summary {
+  margin: 0 0 12px; color: var(--dim); font-size: 11.5px;
+}
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  align-items: stretch;
+}
+.gallery-notice { margin: 0; color: var(--muted); }
 .gallery-notice[role="alert"] { color: #FF9EA1; }
 .gcard {
   position: relative;
@@ -927,7 +939,7 @@ textarea:focus, input:focus {
   .workspace { grid-template-columns: 132px minmax(0, 1fr) 310px; }
 }
 @media (max-width: 940px) {
-  .gallery { grid-template-columns: 1fr 1fr; }
+  .gallery-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .workspace {
     grid-template-columns: 1fr; grid-template-rows: auto auto auto; height: auto;
   }
@@ -936,6 +948,14 @@ textarea:focus, input:focus {
   .rail { flex-direction: row; border-right: 0; border-bottom: 1px solid var(--line-soft); }
   .panel { border-left: 0; border-top: 1px solid var(--line-soft); }
   .panel-body { max-height: none; }
+}
+@media (max-width: 560px) {
+  .gallery-toolbar { grid-template-columns: 1fr 1fr; }
+  .gallery-toolbar input { grid-column: 1 / -1; }
+  .gallery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+}
+@media (max-width: 380px) {
+  .gallery-grid { grid-template-columns: 1fr; }
 }
 
 /* ============================================================ AUTH VIEW */
@@ -1395,8 +1415,6 @@ html[data-theme="light"] .authmsg {
   #peekBtn { width: 100%; height: 40px; }
   .knobs { gap: 14px 12px; }
   .styles { max-width: none; gap: 8px; }
-  .gallery { grid-template-columns: 1fr; }
-
   .editbar {
     height: auto; min-height: 52px; flex-wrap: wrap;
     gap: 8px; padding: 8px 14px;

@@ -799,3 +799,36 @@ Status: draft
 **Images:** the style picker with four cards on desktop and two columns on mobile.
 
 ---
+
+## 2026-10-05 — Finding a template
+Status: draft
+
+> Four templates fit on one row. Tens need a way to find the right one.
+>
+> Added search across titles, styles, and formats, plus style and format filters. The gallery stays compact: four across on desktop, fewer on smaller screens.
+
+**Images:** the gallery with four columns, then narrowed by a style filter.
+
+---
+
+## 2026-10-05 — Preview the actual style
+Status: draft
+
+> Style choices used to be colored bars. You had to pick one and hope the finished slide looked right.
+>
+> The style picker now shows the real first slide, rendered by the same carousel file used in preview and export. Pick the look before you write; no blank cover, no guesswork.
+
+**Images:** the style picker showing the three real starter-slide designs.
+
+---
+
+## 2026-10-05 — Feedback one click closer
+Status: draft
+
+> I put the template catalog behind the admin header shortcut, but the thing I most need to hear is what people think.
+>
+> The header now opens the feedback inbox directly. Templates and styles are still one click away inside admin.
+
+**Images:** the admin header with Feedback selected and the inbox open.
+
+---

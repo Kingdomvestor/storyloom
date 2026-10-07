@@ -175,9 +175,6 @@ test('dashboard feedback submits contextual messages and admins can review safel
     await page.click('#feedbackCloseBtn');
     await page.click('#adminLink');
     await page.waitForFunction(() => document.documentElement.dataset.view === 'admin'
-      && location.pathname === '/studio/admin/templates');
-    await page.click('.admin-nav [data-admin-page="feedback"]');
-    await page.waitForFunction(() => document.documentElement.dataset.view === 'admin'
       && location.pathname === '/studio/admin/feedback'
       && document.querySelector('.feedback-admin-card'), { timeout: 7000 }).catch(async (error) => {
       console.error('feedback admin load', await page.evaluate(() => ({

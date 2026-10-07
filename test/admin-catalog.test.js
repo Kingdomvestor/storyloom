@@ -85,6 +85,8 @@ test('admin catalogs filter correctly and custom styles can be archived', async 
         await respond({ ok: true, brands: [] });
       } else if (url.pathname === '/api/validate') {
         await respond({ ok: true, errors: [], warnings: [] });
+      } else if (url.pathname === '/api/admin/feedback') {
+        await respond({ ok: true, feedback: [] });
       } else if (url.pathname === '/api/admin/templates') {
         adminTemplateListRequests += 1;
         await respond({ ok: true, templates });
@@ -108,6 +110,9 @@ test('admin catalogs filter correctly and custom styles can be archived', async 
     await page.goto(`${base}/studio`, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#adminLink.admin-ready');
     await page.click('#adminLink');
+    await page.waitForFunction(() => document.documentElement.dataset.view === 'admin'
+      && location.pathname === '/studio/admin/feedback');
+    await page.click('.admin-nav [data-admin-page="templates"]');
     await page.waitForFunction(() => document.documentElement.dataset.view === 'admin'
       && document.querySelectorAll('.admin-template-row').length === 3);
     assert.equal(new URL(page.url()).pathname, '/studio/admin/templates');
@@ -238,6 +243,8 @@ test('admin catalogs filter correctly and custom styles can be archived', async 
       && !document.querySelector('#newDeckChoice').hidden);
     await page.click('#newDeckChoice [data-start-mode="template"]');
     await page.waitForSelector('#gallery .gcard');
+    assert.equal(await page.$eval('.gallery-grid', (grid) =>
+      getComputedStyle(grid).gridTemplateColumns.split(' ').length), 4);
     await page.click('#gallery .gcard');
     await page.waitForFunction(() => document.documentElement.dataset.view === 'editor');
     await page.click('#backBtn');
@@ -274,6 +281,8 @@ test('admin catalogs filter correctly and custom styles can be archived', async 
       && !document.querySelector('#gallery').hidden
       && document.querySelector('#gallery .gcard'));
     await page.setViewport({ width: 390, height: 844 });
+    assert.equal(await page.$eval('.gallery-grid', (grid) =>
+      getComputedStyle(grid).gridTemplateColumns.split(' ').length), 2);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     assert.deepEqual(pageErrors, []);
   } finally {
