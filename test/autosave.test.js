@@ -162,7 +162,7 @@ test('autosave persists edits made while the first save is in flight', async () 
     const button = document.querySelector('#newDeckBtn');
     return button && getComputedStyle(button).display !== 'none';
   });
-  assert.equal(await page.$eval('#brandHome', (link) => link.getAttribute('href')), '/studio');
+  assert.equal(await page.$eval('#brandHome', (link) => link.getAttribute('href')), '/');
   assert.equal(await page.$eval('.deck-open', (button) => button.getAttribute('aria-label')),
     'Open Saved sample carousel');
   assert.equal(await page.$eval('.deckcard .del', (button) => button.getAttribute('aria-label')),
@@ -253,7 +253,8 @@ test('autosave persists edits made while the first save is in flight', async () 
     input.value = 'Latest edit during save';
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await page.waitForFunction(() => document.querySelector('#autostate')?.classList.contains('saved'));
+  await page.click('#brandHome');
+  await page.waitForFunction(() => location.pathname === '/');
 
   assert.deepEqual(writes, [
     { method: 'POST', title: 'First saved version' },
@@ -261,10 +262,6 @@ test('autosave persists edits made while the first save is in flight', async () 
   ]);
   assert.deepEqual(savedSources.slice(0, 2), ['template', 'template']);
   assert.deepEqual(handlerErrors, []);
-
-  await page.click('#brandHome');
-  await page.waitForFunction(() => document.documentElement.dataset.view === 'dashboard');
-  assert.equal(new URL(page.url()).pathname, '/studio');
 
   const originalTheme = await page.evaluate(() => document.documentElement.dataset.theme);
   const nextTheme = originalTheme === 'dark' ? 'light' : 'dark';

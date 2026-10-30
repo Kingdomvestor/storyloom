@@ -209,7 +209,6 @@ async function applySession(session, { navigate = true } = {}) {
   }
   state.user = session?.user ?? null;
   document.documentElement.dataset.auth = state.user ? 'in' : 'out';
-  $('#brandHome').href = state.user ? '/studio' : '/';
   if (!state.user) {
     state.credits = null;
     state.deckId = null;
@@ -443,19 +442,21 @@ function wireAuth() {
   };
   $('#brandHome').onclick = async (event) => {
     if (!state.user) return;
-    event.preventDefault();
-    if (state.deck && state.dirty) {
-      clearTimeout(autosaveTimer);
-      autosaveTimer = null;
-      const r = await persist();
-      if (!r.ok) {
-        $('#stageNote').textContent = `Cannot leave yet — save failed: ${r.message}`;
-        scheduleAutosaveRetry(r.message);
-        return;
-      }
+    if (!state.deck || !state.dirty) {
+      clearEditorSnapshot();
+      return;
     }
-    clearEditorLocation();
-    await applySession({ user: state.user });
+    event.preventDefault();
+    clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+    const r = await persist();
+    if (!r.ok) {
+      $('#stageNote').textContent = `Cannot leave yet — save failed: ${r.message}`;
+      scheduleAutosaveRetry(r.message);
+      return;
+    }
+    clearEditorSnapshot();
+    location.assign('/');
   };
   $('#dashLink').onclick = async () => {
     if (state.deck && state.dirty && state.user) {
